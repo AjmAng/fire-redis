@@ -1,0 +1,44 @@
+{
+  "cases": [
+    {
+      "name": "small-set",
+      "scale": "small",
+      "op": "set",
+      "requests": 50000,
+      "workers": 30,
+      "keyspace": 5000,
+      "value_size": 128,
+      "pipeline_size": 10,
+      "warmup": 500,
+      "seed": 42,
+      "key_prefix": "perf-small-set"
+    },
+    {
+      "name": "medium-mixed",
+      "scale": "medium",
+      "op": "mixed",
+      "requests": 150000,
+      "workers": 50,
+      "keyspace": 15000,
+      "value_size": 128,
+      "pipeline_size": 10,
+      "warmup": 1000,
+      "seed": 42,
+      "key_prefix": "perf-medium-mixed"
+    },
+    {
+      "name": "large-pipeline",
+      "scale": "large",
+      "op": "pipeline",
+      "requests": 250000,
+      "workers": 80,
+      "keyspace": 30000,
+      "value_size": 256,
+      "pipeline_size": 20,
+      "warmup": 2000,
+      "seed": 42,
+      "key_prefix": "perf-large-pipeline"
+    }
+  ]
+}
+

@@ -1,0 +1,15 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "small scale test",
+            "type": "shell",
+            "command": "python.exe main.py --requests 1000 --workers 10 --warmup 100 --op mixed",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
