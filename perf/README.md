@@ -6,7 +6,7 @@ This folder provides:
 
 - `main.py`: single benchmark run with latency and throughput metrics
 - `run_matrix.py`: batch benchmark runner across multiple workload scales
-- `../scripts/compare-images.sh`: compare `fire-redis` vs official `redis` under equal container limits
+- `compare-images.sh`: compare `fire-redis` vs official `redis` under equal container limits
 
 ## Install
 
