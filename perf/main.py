@@ -13,6 +13,26 @@ from dataclasses import dataclass
 import redis
 
 
+SUPPORTED_OPS = [
+    "set",
+    "get",
+    "mixed",
+    "pipeline",
+    "incr",
+    "mget",
+    "hset",
+    "hget",
+    "lpush",
+    "lpop",
+    "sadd",
+    "sismember",
+    "zadd",
+    "zscore",
+]
+
+OPS_REQUIRING_PREFILL = {"get", "mixed", "pipeline", "mget", "hget", "lpop", "sismember", "zscore"}
+
+
 @dataclass
 class BenchResult:
     latencies_ms: list[float]
@@ -23,7 +43,7 @@ class BenchResult:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Simple Redis performance benchmark")
     parser.add_argument("--url", default="redis://127.0.0.1:6379/0", help="Redis URL")
-    parser.add_argument("--op", choices=["set", "get", "mixed", "pipeline"], default="mixed")
+    parser.add_argument("--op", choices=SUPPORTED_OPS, default="mixed")
     parser.add_argument("--requests", type=int, default=100_000, help="Total logical requests")
     parser.add_argument("--workers", type=int, default=50, help="Concurrent workers")
     parser.add_argument("--key-prefix", default="perf", help="Benchmark key prefix")
@@ -63,6 +83,44 @@ def prefill_keys(client: redis.Redis, key_prefix: str, keyspace: int, payload: b
     pipe = client.pipeline(transaction=False)
     for i in range(keyspace):
         pipe.set(f"{key_prefix}:{i}", payload)
+        if i % 500 == 0:
+            pipe.execute()
+    pipe.execute()
+
+
+def prefill_hashes(client: redis.Redis, key_prefix: str, keyspace: int, payload: bytes) -> None:
+    pipe = client.pipeline(transaction=False)
+    for i in range(keyspace):
+        pipe.hset(f"{key_prefix}:{i}", mapping={"field": payload})
+        if i % 500 == 0:
+            pipe.execute()
+    pipe.execute()
+
+
+def prefill_lists(client: redis.Redis, key_prefix: str, keyspace: int, payload: bytes) -> None:
+    pipe = client.pipeline(transaction=False)
+    for i in range(keyspace):
+        key = f"{key_prefix}:{i}"
+        pipe.delete(key)
+        pipe.rpush(key, payload, payload, payload, payload)
+        if i % 250 == 0:
+            pipe.execute()
+    pipe.execute()
+
+
+def prefill_sets(client: redis.Redis, key_prefix: str, keyspace: int) -> None:
+    pipe = client.pipeline(transaction=False)
+    for i in range(keyspace):
+        pipe.sadd(f"{key_prefix}:{i}", f"member:{i}")
+        if i % 500 == 0:
+            pipe.execute()
+    pipe.execute()
+
+
+def prefill_zsets(client: redis.Redis, key_prefix: str, keyspace: int) -> None:
+    pipe = client.pipeline(transaction=False)
+    for i in range(keyspace):
+        pipe.zadd(f"{key_prefix}:{i}", {f"member:{i}": float(i)})
         if i % 500 == 0:
             pipe.execute()
     pipe.execute()
@@ -109,7 +167,7 @@ def run_worker(
                     client.set(key, payload)
                 else:
                     client.get(key)
-            else:  # pipeline
+            elif op == "pipeline":
                 pipe = client.pipeline(transaction=False)
                 for _ in range(pipeline_size):
                     key_id = rnd.randrange(keyspace)
@@ -117,6 +175,30 @@ def run_worker(
                     pipe.set(key, payload)
                     pipe.get(key)
                 pipe.execute()
+            elif op == "incr":
+                client.incr(key)
+            elif op == "mget":
+                keys = [f"{key_prefix}:{rnd.randrange(keyspace)}" for _ in range(pipeline_size)]
+                client.mget(keys)
+            elif op == "hset":
+                client.hset(key, f"field:{rnd.randrange(16)}", payload)
+            elif op == "hget":
+                client.hget(key, "field")
+            elif op == "lpush":
+                client.lpush(key, payload)
+            elif op == "lpop":
+                client.lpop(key)
+            elif op == "sadd":
+                client.sadd(key, f"member:{rnd.randrange(max(1, keyspace * 2))}")
+            elif op == "sismember":
+                client.sismember(key, f"member:{key_id}")
+            elif op == "zadd":
+                member = f"member:{rnd.randrange(max(1, keyspace * 2))}"
+                client.zadd(key, {member: rnd.random() * 10_000})
+            elif op == "zscore":
+                client.zscore(key, f"member:{key_id}")
+            else:
+                raise ValueError(f"unsupported op: {op}")
             done += 1
         except redis.RedisError:
             errors += 1
@@ -138,7 +220,7 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.requests <= 0 or args.workers <= 0 or args.keyspace <= 0 or args.value_size <= 0:
         raise SystemExit("requests/workers/keyspace/value-size must be > 0")
-    if args.op == "pipeline" and args.pipeline_size <= 0:
+    if args.pipeline_size <= 0 and args.op in {"pipeline", "mget"}:
         raise SystemExit("pipeline-size must be > 0")
 
     random.seed(args.seed)
@@ -153,9 +235,18 @@ def main() -> None:
         f"keyspace={args.keyspace} value_size={args.value_size}"
     )
 
-    if args.op in {"get", "mixed", "pipeline"}:
+    if args.op in OPS_REQUIRING_PREFILL:
         print("[setup] pre-filling keys...")
-        prefill_keys(client, args.key_prefix, args.keyspace, payload)
+        if args.op in {"get", "mixed", "pipeline", "mget"}:
+            prefill_keys(client, args.key_prefix, args.keyspace, payload)
+        elif args.op == "hget":
+            prefill_hashes(client, args.key_prefix, args.keyspace, payload)
+        elif args.op == "lpop":
+            prefill_lists(client, args.key_prefix, args.keyspace, payload)
+        elif args.op == "sismember":
+            prefill_sets(client, args.key_prefix, args.keyspace)
+        elif args.op == "zscore":
+            prefill_zsets(client, args.key_prefix, args.keyspace)
 
     if args.warmup > 0:
         print(f"[warmup] running {args.warmup} requests...")

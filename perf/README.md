@@ -44,6 +44,27 @@ Pipeline workload:
 python main.py --op pipeline --pipeline-size 20 --workers 50 --requests 50000
 ```
 
+Hash workload:
+
+```bash
+python main.py --op hset --workers 50 --requests 100000
+python main.py --op hget --workers 50 --requests 100000
+```
+
+Set workload:
+
+```bash
+python main.py --op sadd --workers 50 --requests 100000
+python main.py --op sismember --workers 50 --requests 100000
+```
+
+Sorted-set workload:
+
+```bash
+python main.py --op zadd --workers 50 --requests 100000
+python main.py --op zscore --workers 50 --requests 100000
+```
+
 Delete generated keys after the run:
 
 ```bash
@@ -65,7 +86,7 @@ On Windows, you can use your local venv explicitly:
 ## Common Arguments
 
 - `--url`: Redis URL
-- `--op`: `set|get|mixed|pipeline`
+- `--op`: `set|get|mixed|pipeline|incr|mget|hset|hget|lpush|lpop|sadd|sismember|zadd|zscore`
 - `--requests`: total logical requests
 - `--workers`: concurrent worker count
 - `--key-prefix`: key prefix (default: `perf`)
@@ -101,7 +122,7 @@ Run predefined scale factors (both `requests` and `keyspace` are multiplied by s
 python run_matrix.py \
   --url redis://127.0.0.1:6379/0 \
   --scales 1,2,4,8 \
-  --ops set,get,mixed,pipeline \
+  --ops set,get,mixed,pipeline,incr,mget,hset,hget,lpush,lpop,sadd,sismember,zadd,zscore \
   --repeat 3 \
   --output-json matrix-results.json \
   --output-csv matrix-results.csv

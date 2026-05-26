@@ -16,8 +16,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--main-script", default="main.py", help="Path to perf main script")
     parser.add_argument(
         "--ops",
-        default="set,get,mixed,pipeline",
-        help="Comma-separated ops to run",
+233        default="set,get,mixed,pipeline,incr,mget,hset,hget,lpush,lpop,sadd,sismember,zadd,zscore",
+        help="Comma-separated ops to run (must be supported by main.py --op)",
     )
     parser.add_argument(
         "--scales",
