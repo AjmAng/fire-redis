@@ -19,7 +19,7 @@ A Redis-like server written in Rust with async I/O (`tokio`), RESP2 protocol sup
 - `src/store/`: in-memory data structure implementations
 - `src/persistence/`: RDB/AOF persistence logic
 - `perf/`: benchmark scripts and matrix runner
-- `scripts/compare-images.sh`: compare `fire-redis` and official `redis` under equal limits
+- `docs/`: architecture, roadmap, demo guide, tradeoffs, observability
 
 ## Quick Start (Local)
 
@@ -60,6 +60,10 @@ cargo run --bin redis-cli -- SET hello world
 cargo run --bin redis-cli -- GET hello
 ```
 
+### 4) Interview demo replay
+
+See `docs/DEMO.md` for the manual demo flow and command sequence.
+
 ## Docker
 
 Build image:
@@ -80,10 +84,17 @@ See `perf/README.md` for:
 
 - Single-run benchmark (`perf/main.py`)
 - Matrix benchmark across different scales (`perf/run_matrix.py`)
-- Head-to-head image comparison (`scripts/compare-images.sh`)
+- Head-to-head image comparison (`perf/compare-images.sh`)
+
+## Interview Docs
+
+- `docs/ROADMAP.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DEMO.md`
+- `docs/TRADEOFFS.md`
+- `docs/OBSERVABILITY.md`
 
 ## Notes
 
 - Protocol target: RESP2
 - This project is intended for learning, experimentation, and systems interview demos.
-
