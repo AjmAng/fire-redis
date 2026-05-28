@@ -1,15 +1,15 @@
 use bytes::Bytes;
 use dashmap::DashMap;
+use ordered_float::OrderedFloat;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
-use ordered_float::OrderedFloat;
 
-pub mod string;
+pub mod hash;
 pub mod list;
 pub mod set;
-pub mod hash;
 pub mod sorted_set;
+pub mod string;
 
 #[derive(Clone, Debug)]
 pub enum StoredValue {
@@ -43,7 +43,6 @@ impl Store {
             }),
         }
     }
-
 
     pub(crate) fn check_expiration(&self, key: &str) -> bool {
         let expire_at = self
@@ -103,14 +102,14 @@ impl Store {
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect();
-        
+
         let expirations: HashMap<String, Instant> = self
             .inner
             .expirations
             .iter()
             .map(|entry| (entry.key().clone(), *entry.value()))
             .collect();
-        
+
         (data, expirations)
     }
 
@@ -192,6 +191,32 @@ impl Store {
             true
         } else {
             false
+        }
+    }
+
+    pub fn pttl(&self, key: &str) -> i64 {
+        if !self.exists(key) {
+            return -2;
+        }
+
+        match self
+            .inner
+            .expirations
+            .get(key)
+            .map(|expire_entry| *expire_entry.value())
+        {
+            Some(expire_at) => expire_at
+                .saturating_duration_since(Instant::now())
+                .as_millis() as i64,
+            None => -1,
+        }
+    }
+
+    pub fn ttl(&self, key: &str) -> i64 {
+        match self.pttl(key) {
+            -2 => -2,
+            -1 => -1,
+            ms => ms / 1000,
         }
     }
 }

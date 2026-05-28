@@ -17,9 +17,10 @@ impl Store {
         match entry.value_mut() {
             StoredValue::SortedSet { scores, tree } => {
                 let ordered_score = OrderedFloat(score);
+                let is_new_member = !scores.contains_key(&member);
 
                 if let Some(old_score) = scores.remove(&member) {
-                    if let Some(members) = tree.get_mut(&ordered_score.into()) {
+                    if let Some(members) = tree.get_mut(&old_score.into()) {
                         members.remove(&member);
                         if members.is_empty() {
                             tree.remove(&old_score.into());
@@ -28,8 +29,10 @@ impl Store {
                 }
 
                 scores.insert(member.clone(), ordered_score.into());
-                tree.entry(ordered_score).or_insert_with(HashSet::new).insert(member);
-                true
+                tree.entry(ordered_score)
+                    .or_insert_with(HashSet::new)
+                    .insert(member);
+                is_new_member
             }
             _ => false,
         }
@@ -197,5 +200,16 @@ mod tests {
 
         assert_eq!(store.z_rem("z", &[Bytes::from("b")]), 1);
         assert_eq!(store.z_card("z"), 1);
+    }
+
+    #[test]
+    fn test_sorted_set_update_does_not_duplicate_in_range() {
+        let store = Store::new();
+
+        assert!(store.z_add("z".to_string(), 1.0, Bytes::from("a")));
+        assert!(!store.z_add("z".to_string(), 3.0, Bytes::from("a")));
+
+        let range = store.z_range("z", 0, -1);
+        assert_eq!(range, vec![(Bytes::from("a"), 3.0)]);
     }
 }

@@ -13,11 +13,16 @@ pub enum Command {
 
     // String
     Get(String),
-    Set(String, Bytes, Option<u64>), // key, value, px/ms
+    Set(String, Bytes, Option<u64>, SetCondition), // key, value, px/ms, condition
     Del(Vec<String>),
     Exists(Vec<String>),
     Expire(String, u64),
+    Ttl(String),
+    Pttl(String),
     Incr(String),
+    Decr(String),
+    MGet(Vec<String>),
+    MSet(Vec<(String, Bytes)>),
     Append(String, Bytes),
     StrLen(String),
     Type(String),
@@ -59,7 +64,13 @@ pub enum Command {
     ZRem(String, Vec<Bytes>),
     ZCard(String),
     ZCount(String, f64, f64),
+}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetCondition {
+    None,
+    Nx,
+    Xx,
 }
 
 impl TryFrom<Vec<Value>> for Command {
@@ -69,7 +80,6 @@ impl TryFrom<Vec<Value>> for Command {
         if args.is_empty() {
             return Err(Value::Error("ERR empty command".into()));
         }
-
 
         let cmd = match &args[0] {
             Value::BulkString(Some(b)) => b.to_ascii_uppercase(),
@@ -84,7 +94,12 @@ impl TryFrom<Vec<Value>> for Command {
             b"DEL" => parse_del(&args),
             b"EXISTS" => parse_exists(&args),
             b"EXPIRE" => parse_expire(&args),
+            b"TTL" => parse_ttl(&args),
+            b"PTTL" => parse_pttl(&args),
             b"INCR" => parse_incr(&args),
+            b"DECR" => parse_decr(&args),
+            b"MGET" => parse_mget(&args),
+            b"MSET" => parse_mset(&args),
             b"APPEND" => parse_append(&args),
             b"STRLEN" => parse_strlen(&args),
             b"TYPE" => parse_type(&args),
@@ -127,7 +142,6 @@ impl TryFrom<Vec<Value>> for Command {
 }
 
 impl Command {
-
     pub fn execute(self, store: &Store) -> Value {
         match self {
             Command::Ping => conn::handle_ping(),
@@ -136,11 +150,16 @@ impl Command {
             Command::Info => conn::handle_info(),
 
             Command::Get(k) => data::handle_get(store, k),
-            Command::Set(k, v, px) => data::handle_set(store, k, v, px),
+            Command::Set(k, v, px, condition) => data::handle_set(store, k, v, px, condition),
             Command::Del(keys) => data::handle_del(store, keys),
             Command::Exists(keys) => data::handle_exists(store, keys),
             Command::Expire(k, secs) => data::handle_expire(store, k, secs),
+            Command::Ttl(k) => data::handle_ttl(store, k),
+            Command::Pttl(k) => data::handle_pttl(store, k),
             Command::Incr(k) => data::handle_incr(store, k),
+            Command::Decr(k) => data::handle_decr(store, k),
+            Command::MGet(keys) => data::handle_mget(store, keys),
+            Command::MSet(entries) => data::handle_mset(store, entries),
             Command::Append(k, v) => data::handle_append(store, k, v),
             Command::StrLen(k) => data::handle_strlen(store, k),
             Command::Type(k) => data::handle_type(store, k),
@@ -177,7 +196,9 @@ impl Command {
             Command::ZScore(k, member) => data::handle_z_score(store, k, member),
             Command::ZRem(k, members) => data::handle_z_rem(store, k, members),
             Command::ZCard(k) => data::handle_z_card(store, k),
-            Command::ZCount(k, min_score, max_score) => data::handle_z_count(store, k, min_score, max_score),
+            Command::ZCount(k, min_score, max_score) => {
+                data::handle_z_count(store, k, min_score, max_score)
+            }
         }
     }
 }
@@ -194,7 +215,9 @@ fn parse_echo(args: &[Value]) -> Result<Command, Value> {
 
 fn parse_get(args: &[Value]) -> Result<Command, Value> {
     if args.len() != 2 {
-        return Err(Value::Error("ERR wrong number of arguments for 'get'".into()));
+        return Err(Value::Error(
+            "ERR wrong number of arguments for 'get'".into(),
+        ));
     }
     let key = bulk_to_string(&args[1])?;
     Ok(Command::Get(key))
@@ -202,24 +225,55 @@ fn parse_get(args: &[Value]) -> Result<Command, Value> {
 
 fn parse_set(args: &[Value]) -> Result<Command, Value> {
     if args.len() < 3 {
-        return Err(Value::Error("ERR wrong number of arguments for 'set'".into()));
+        return Err(Value::Error(
+            "ERR wrong number of arguments for 'set'".into(),
+        ));
     }
     let key = bulk_to_string(&args[1])?;
     let val = bulk_to_bytes(&args[2])?;
 
     let mut px = None;
-    if args.len() >= 5 {
-        if let Value::BulkString(Some(opt)) = &args[3] {
-            let opt_str = String::from_utf8_lossy(opt).to_ascii_uppercase();
-            if opt_str == "PX" {
-                px = Some(bulk_to_u64(&args[4])?);
-            } else if opt_str == "EX" {
-                px = Some(bulk_to_u64(&args[4])? * 1000);
+    let mut condition = SetCondition::None;
+    let mut idx = 3;
+
+    while idx < args.len() {
+        let opt = bulk_to_string(&args[idx])?.to_ascii_uppercase();
+        match opt.as_str() {
+            "EX" | "PX" => {
+                if px.is_some() || idx + 1 >= args.len() {
+                    return Err(Value::Error("ERR syntax error".into()));
+                }
+
+                let ttl = bulk_to_u64(&args[idx + 1])?;
+                px = if opt == "EX" {
+                    Some(ttl.checked_mul(1000).ok_or_else(|| {
+                        Value::Error("ERR invalid expire time in 'set' command".into())
+                    })?)
+                } else {
+                    Some(ttl)
+                };
+
+                idx += 2;
             }
+            "NX" => {
+                if condition != SetCondition::None {
+                    return Err(Value::Error("ERR syntax error".into()));
+                }
+                condition = SetCondition::Nx;
+                idx += 1;
+            }
+            "XX" => {
+                if condition != SetCondition::None {
+                    return Err(Value::Error("ERR syntax error".into()));
+                }
+                condition = SetCondition::Xx;
+                idx += 1;
+            }
+            _ => return Err(Value::Error("ERR syntax error".into())),
         }
     }
 
-    Ok(Command::Set(key, val, px))
+    Ok(Command::Set(key, val, px, condition))
 }
 
 fn parse_del(args: &[Value]) -> Result<Command, Value> {
@@ -247,6 +301,20 @@ fn parse_expire(args: &[Value]) -> Result<Command, Value> {
     Ok(Command::Expire(key, ttl_ms))
 }
 
+fn parse_ttl(args: &[Value]) -> Result<Command, Value> {
+    if args.len() != 2 {
+        return Err(Value::Error("ERR wrong number of arguments".into()));
+    }
+    Ok(Command::Ttl(bulk_to_string(&args[1])?))
+}
+
+fn parse_pttl(args: &[Value]) -> Result<Command, Value> {
+    if args.len() != 2 {
+        return Err(Value::Error("ERR wrong number of arguments".into()));
+    }
+    Ok(Command::Pttl(bulk_to_string(&args[1])?))
+}
+
 fn parse_incr(args: &[Value]) -> Result<Command, Value> {
     if args.len() != 2 {
         return Err(Value::Error("ERR wrong number of arguments".into()));
@@ -255,11 +323,43 @@ fn parse_incr(args: &[Value]) -> Result<Command, Value> {
     Ok(Command::Incr(key))
 }
 
+fn parse_decr(args: &[Value]) -> Result<Command, Value> {
+    if args.len() != 2 {
+        return Err(Value::Error("ERR wrong number of arguments".into()));
+    }
+    let key = bulk_to_string(&args[1])?;
+    Ok(Command::Decr(key))
+}
+
+fn parse_mget(args: &[Value]) -> Result<Command, Value> {
+    if args.len() < 2 {
+        return Err(Value::Error("ERR wrong number of arguments".into()));
+    }
+    let keys: Result<Vec<_>, _> = args[1..].iter().map(bulk_to_string).collect();
+    Ok(Command::MGet(keys?))
+}
+
+fn parse_mset(args: &[Value]) -> Result<Command, Value> {
+    if args.len() < 3 || args.len() % 2 == 0 {
+        return Err(Value::Error("ERR wrong number of arguments".into()));
+    }
+
+    let mut entries = Vec::with_capacity((args.len() - 1) / 2);
+    for pair in args[1..].chunks(2) {
+        entries.push((bulk_to_string(&pair[0])?, bulk_to_bytes(&pair[1])?));
+    }
+
+    Ok(Command::MSet(entries))
+}
+
 fn parse_append(args: &[Value]) -> Result<Command, Value> {
     if args.len() != 3 {
         return Err(Value::Error("ERR wrong number of arguments".into()));
     }
-    Ok(Command::Append(bulk_to_string(&args[1])?, bulk_to_bytes(&args[2])?))
+    Ok(Command::Append(
+        bulk_to_string(&args[1])?,
+        bulk_to_bytes(&args[2])?,
+    ))
 }
 
 fn parse_strlen(args: &[Value]) -> Result<Command, Value> {
@@ -315,7 +415,6 @@ fn parse_l_pop(args: &[Value]) -> Result<Command, Value> {
     Ok(Command::LPop(bulk_to_string(&args[1])?))
 }
 
-
 fn parse_r_pop(args: &[Value]) -> Result<Command, Value> {
     if args.len() != 2 {
         return Err(Value::Error("ERR wrong number of arguments".into()));
@@ -335,7 +434,10 @@ fn parse_l_index(args: &[Value]) -> Result<Command, Value> {
     if args.len() != 3 {
         return Err(Value::Error("ERR wrong number of arguments".into()));
     }
-    Ok(Command::LIndex(bulk_to_string(&args[1])?, bulk_to_i64(&args[2])?))
+    Ok(Command::LIndex(
+        bulk_to_string(&args[1])?,
+        bulk_to_i64(&args[2])?,
+    ))
 }
 
 fn parse_l_range(args: &[Value]) -> Result<Command, Value> {
@@ -559,10 +661,9 @@ fn bulk_to_bytes(v: &Value) -> Result<Bytes, Value> {
 
 fn bulk_to_u64(v: &Value) -> Result<u64, Value> {
     match v {
-        Value::BulkString(Some(b)) => {
-            String::from_utf8_lossy(b).parse()
-                .map_err(|_| Value::Error("ERR value is not integer".into()))
-        }
+        Value::BulkString(Some(b)) => String::from_utf8_lossy(b)
+            .parse()
+            .map_err(|_| Value::Error("ERR value is not integer".into())),
         Value::Integer(i) if *i >= 0 => Ok(*i as u64),
         Value::Integer(_) => Err(Value::Error("ERR value is not integer".into())),
         _ => Err(Value::Error("ERR value is not integer".into())),
@@ -601,13 +702,86 @@ mod tests {
     fn test_parse_set_with_ex_converts_to_ms() {
         let cmd = Command::try_from(vec![b("SET"), b("k"), b("v"), b("EX"), b("2")]).unwrap();
         match cmd {
-            Command::Set(key, value, Some(ttl_ms)) => {
+            Command::Set(key, value, Some(ttl_ms), condition) => {
                 assert_eq!(key, "k");
                 assert_eq!(value, Bytes::from("v"));
                 assert_eq!(ttl_ms, 2000);
+                assert_eq!(condition, SetCondition::None);
             }
             other => panic!("unexpected command: {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_parse_set_with_nx_and_px() {
+        let cmd =
+            Command::try_from(vec![b("SET"), b("k"), b("v"), b("NX"), b("PX"), b("100")]).unwrap();
+        match cmd {
+            Command::Set(key, value, Some(ttl_ms), condition) => {
+                assert_eq!(key, "k");
+                assert_eq!(value, Bytes::from("v"));
+                assert_eq!(ttl_ms, 100);
+                assert_eq!(condition, SetCondition::Nx);
+            }
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_set_rejects_nx_xx_combination() {
+        let result = Command::try_from(vec![b("SET"), b("k"), b("v"), b("NX"), b("XX")]);
+        assert!(matches!(result, Err(Value::Error(_))));
+    }
+
+    #[test]
+    fn test_parse_set_rejects_unknown_option() {
+        let result = Command::try_from(vec![b("SET"), b("k"), b("v"), b("KEEPTTL")]);
+        assert!(matches!(result, Err(Value::Error(_))));
+    }
+
+    #[test]
+    fn test_parse_ttl() {
+        let cmd = Command::try_from(vec![b("TTL"), b("k")]).unwrap();
+        match cmd {
+            Command::Ttl(key) => assert_eq!(key, "k"),
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_pttl() {
+        let cmd = Command::try_from(vec![b("PTTL"), b("k")]).unwrap();
+        match cmd {
+            Command::Pttl(key) => assert_eq!(key, "k"),
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_mget() {
+        let cmd = Command::try_from(vec![b("MGET"), b("k1"), b("k2")]).unwrap();
+        match cmd {
+            Command::MGet(keys) => assert_eq!(keys, vec!["k1".to_string(), "k2".to_string()]),
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_mset() {
+        let cmd = Command::try_from(vec![b("MSET"), b("k1"), b("v1"), b("k2"), b("v2")]).unwrap();
+        match cmd {
+            Command::MSet(entries) => assert_eq!(entries, vec![
+                ("k1".to_string(), Bytes::from("v1")),
+                ("k2".to_string(), Bytes::from("v2")),
+            ]),
+            other => panic!("unexpected command: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_mset_rejects_odd_pairs() {
+        let result = Command::try_from(vec![b("MSET"), b("k1"), b("v1"), b("k2")]);
+        assert!(matches!(result, Err(Value::Error(_))));
     }
 
     #[test]
@@ -647,4 +821,3 @@ mod tests {
         }
     }
 }
-

@@ -2,6 +2,32 @@ use crate::store::{StoredValue, Store};
 use bytes::Bytes;
 
 impl Store {
+    fn adjust_counter(&self, key: &str, delta: i64) -> Result<i64, String> {
+        self.check_expiration(key);
+
+        let mut entry = self
+            .inner
+            .data
+            .entry(key.to_string())
+            .or_insert_with(|| StoredValue::String(Bytes::from("0")));
+
+        match entry.value_mut() {
+            StoredValue::String(b) => {
+                let current_str = std::str::from_utf8(b)
+                    .map_err(|_| "Value is not a valid UTF-8 string".to_string())?;
+                let current_num: i64 = current_str
+                    .parse()
+                    .map_err(|_| "Value is not an integer".to_string())?;
+                let new_num = current_num
+                    .checked_add(delta)
+                    .ok_or("Integer overflow")?;
+                *b = Bytes::from(new_num.to_string());
+                Ok(new_num)
+            }
+            _ => Err("Key does not hold a string value".to_string()),
+        }
+    }
+
     pub fn get(&self, key: &str) -> Option<Bytes> {
         if self.check_expiration(key) {
             return None;
@@ -51,22 +77,11 @@ impl Store {
     }
 
     pub fn incr(&self, key: &String) -> Result<i64, String> {
-        self.check_expiration(&key);
+        self.adjust_counter(key, 1)
+    }
 
-        let mut entry = self.inner.data.entry(key.into()).or_insert_with(|| {
-            StoredValue::String(Bytes::from("0"))
-        });
-
-        match entry.value_mut() {
-            StoredValue::String(b) => {
-                let current_str = std::str::from_utf8(b).map_err(|_| "Value is not a valid UTF-8 string".to_string())?;
-                let current_num: i64 = current_str.parse().map_err(|_| "Value is not an integer".to_string())?;
-                let new_num = current_num.checked_add(1).ok_or("Integer overflow")?;
-                *b = Bytes::from(new_num.to_string());
-                Ok(new_num)
-            }
-            _ => Err("Key does not hold a string value".to_string()),
-        }
+    pub fn decr(&self, key: &String) -> Result<i64, String> {
+        self.adjust_counter(key, -1)
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{resp::Value, store::Store};
+use crate::{commands::SetCondition, resp::Value, store::Store};
 use bytes::Bytes;
 
 fn bulk_or_null(value: Option<Bytes>) -> Value {
@@ -67,7 +67,20 @@ pub(crate) fn handle_get(store: &Store, key: String) -> Value {
     bulk_or_null(store.get(&key))
 }
 
-pub(crate) fn handle_set(store: &Store, key: String, value: Bytes, expire: Option<u64>) -> Value {
+pub(crate) fn handle_set(
+    store: &Store,
+    key: String,
+    value: Bytes,
+    expire: Option<u64>,
+    condition: SetCondition,
+) -> Value {
+    let exists = store.exists(&key);
+    match condition {
+        SetCondition::Nx if exists => return Value::Null,
+        SetCondition::Xx if !exists => return Value::Null,
+        _ => {}
+    }
+
     store.set(key, value, expire);
     Value::SimpleString("OK".to_string())
 }
@@ -112,11 +125,41 @@ pub(crate) fn handle_expire(store: &Store, key: String, expire: u64) -> Value {
     }
 }
 
-pub(crate) fn handle_incr(store:&Store, key: String) -> Value {
+pub(crate) fn handle_ttl(store: &Store, key: String) -> Value {
+    Value::Integer(store.ttl(&key))
+}
+
+pub(crate) fn handle_pttl(store: &Store, key: String) -> Value {
+    Value::Integer(store.pttl(&key))
+}
+
+pub(crate) fn handle_incr(store: &Store, key: String) -> Value {
     match store.incr(&key) {
         Ok(v) => Value::Integer(v),
         Err(e) => Value::Error(e),
     }
+}
+
+pub(crate) fn handle_decr(store: &Store, key: String) -> Value {
+    match store.decr(&key) {
+        Ok(v) => Value::Integer(v),
+        Err(e) => Value::Error(e),
+    }
+}
+
+pub(crate) fn handle_mget(store: &Store, keys: Vec<String>) -> Value {
+    Value::Array(Some(
+        keys.into_iter()
+            .map(|key| bulk_or_null(store.get(&key)))
+            .collect(),
+    ))
+}
+
+pub(crate) fn handle_mset(store: &Store, entries: Vec<(String, Bytes)>) -> Value {
+    for (key, value) in entries {
+        store.set(key, value, None);
+    }
+    Value::SimpleString("OK".to_string())
 }
 
 pub(crate) fn handle_exists(store: &Store, keys: Vec<String>) -> Value {
