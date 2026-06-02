@@ -1,6 +1,8 @@
 use crate::{commands::SetCondition, resp::Value, store::Store};
 use bytes::Bytes;
 
+const WRONG_TYPE_ERR: &str = "WRONGTYPE Operation against a key holding the wrong kind of value";
+
 fn bulk_or_null(value: Option<Bytes>) -> Value {
     match value {
         Some(v) => Value::BulkString(Some(v)),
@@ -21,7 +23,21 @@ fn int_bool(value: bool) -> Value {
     Value::Integer(if value { 1 } else { 0 })
 }
 
+fn wrong_type() -> Value {
+    Value::Error(WRONG_TYPE_ERR.to_string())
+}
+
+fn ensure_type(store: &Store, key: &str, expected: &str) -> Option<Value> {
+    match store.type_of(key) {
+        Some(actual) if actual != expected => Some(wrong_type()),
+        _ => None,
+    }
+}
+
 pub fn handle_l_push(store: &Store, key: String, vals: Vec<Bytes>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     if vals.is_empty() {
         return Value::Integer(0);
     }
@@ -33,6 +49,9 @@ pub fn handle_l_push(store: &Store, key: String, vals: Vec<Bytes>) -> Value {
 }
 
 pub fn handle_r_push(store: &Store, key: String, vals: Vec<Bytes>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     if vals.is_empty() {
         return Value::Integer(0);
     }
@@ -44,26 +63,44 @@ pub fn handle_r_push(store: &Store, key: String, vals: Vec<Bytes>) -> Value {
 }
 
 pub fn handle_l_pop(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     bulk_or_null(store.l_pop(&key))
 }
 
 pub fn handle_r_pop(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     bulk_or_null(store.r_pop(&key))
 }
 
 pub fn handle_l_len(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     Value::Integer(store.l_len(&key) as i64)
 }
 
 pub fn handle_l_index(store: &Store, key: String, index: i64) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     bulk_or_null(store.l_index(&key, index))
 }
 
 pub fn handle_l_range(store: &Store, key: String, start: i64, stop: i64) -> Value {
+    if let Some(err) = ensure_type(store, &key, "list") {
+        return err;
+    }
     bulk_array(store.l_range(&key, start, stop))
 }
 
 pub(crate) fn handle_get(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "string") {
+        return err;
+    }
     bulk_or_null(store.get(&key))
 }
 
@@ -86,10 +123,16 @@ pub(crate) fn handle_set(
 }
 
 pub(crate) fn handle_append(store: &Store, key: String, value: Bytes) -> Value {
+    if let Some(err) = ensure_type(store, &key, "string") {
+        return err;
+    }
     Value::Integer(store.append(key, value) as i64)
 }
 
 pub(crate) fn handle_strlen(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "string") {
+        return err;
+    }
     Value::Integer(store.strlen(&key) as i64)
 }
 
@@ -173,26 +216,46 @@ pub(crate) fn handle_del(store: &Store, keys: Vec<String>) -> Value {
 }
 
 pub(crate) fn handle_s_add(store: &Store, key: String, members: Vec<Bytes>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "set") {
+        return err;
+    }
     Value::Integer(store.s_add(key, members) as i64)
 }
 
 pub(crate) fn handle_s_rem(store: &Store, key: String, members: Vec<Bytes>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "set") {
+        return err;
+    }
     Value::Integer(store.s_rem(&key, &members) as i64)
 }
 
 pub(crate) fn handle_s_members(store: &Store, key: String) -> Value {
-    bulk_array(store.s_members(&key))
+    if let Some(err) = ensure_type(store, &key, "set") {
+        return err;
+    }
+    let mut members = store.s_members(&key);
+    members.sort();
+    bulk_array(members)
 }
 
 pub(crate) fn handle_s_is_member(store: &Store, key: String, member: Bytes) -> Value {
+    if let Some(err) = ensure_type(store, &key, "set") {
+        return err;
+    }
     int_bool(store.s_is_member(&key, &member))
 }
 
 pub(crate) fn handle_s_card(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "set") {
+        return err;
+    }
     Value::Integer(store.s_card(&key) as i64)
 }
 
 pub(crate) fn handle_s_pop(store: &Store, key: String, count: Option<usize>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "set") {
+        return err;
+    }
     match count {
         Some(c) => bulk_array(store.s_pop(&key, c)),
         None => {
@@ -203,6 +266,9 @@ pub(crate) fn handle_s_pop(store: &Store, key: String, count: Option<usize>) -> 
 }
 
 pub(crate) fn handle_h_set(store: &Store, key: String, fields: Vec<(String, Bytes)>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     let mut added = 0i64;
     for (field, value) in fields {
         if store.h_set(key.clone(), field, value) {
@@ -213,22 +279,37 @@ pub(crate) fn handle_h_set(store: &Store, key: String, fields: Vec<(String, Byte
 }
 
 pub(crate) fn handle_h_get(store: &Store, key: String, field: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     bulk_or_null(store.h_get(&key, &field))
 }
 
 pub(crate) fn handle_h_del(store: &Store, key: String, fields: Vec<String>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     Value::Integer(store.h_del(&key, &fields) as i64)
 }
 
 pub(crate) fn handle_h_len(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     Value::Integer(store.h_len(&key) as i64)
 }
 
 pub(crate) fn handle_h_exists(store: &Store, key: String, field: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     int_bool(store.h_exists(&key, &field))
 }
 
 pub(crate) fn handle_h_keys(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     Value::Array(Some(
         store
             .h_keys(&key)
@@ -239,10 +320,16 @@ pub(crate) fn handle_h_keys(store: &Store, key: String) -> Value {
 }
 
 pub(crate) fn handle_h_vals(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     bulk_array(store.h_vals(&key))
 }
 
 pub(crate) fn handle_h_get_all(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "hash") {
+        return err;
+    }
     let mut pairs: Vec<_> = store.h_get_all(&key).into_iter().collect();
     pairs.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -255,6 +342,9 @@ pub(crate) fn handle_h_get_all(store: &Store, key: String) -> Value {
 }
 
 pub(crate) fn handle_z_add(store: &Store, key: String, entries: Vec<(f64, Bytes)>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     let mut changed = 0i64;
     for (score, member) in entries {
         if store.z_add(key.clone(), score, member) {
@@ -265,6 +355,9 @@ pub(crate) fn handle_z_add(store: &Store, key: String, entries: Vec<(f64, Bytes)
 }
 
 pub(crate) fn handle_z_range(store: &Store, key: String, start: i64, stop: i64) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     Value::Array(Some(
         store
             .z_range(&key, start, stop)
@@ -275,6 +368,9 @@ pub(crate) fn handle_z_range(store: &Store, key: String, start: i64, stop: i64) 
 }
 
 pub(crate) fn handle_z_rev_range(store: &Store, key: String, start: i64, stop: i64) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     Value::Array(Some(
         store
             .z_rev_range(&key, start, stop)
@@ -285,6 +381,9 @@ pub(crate) fn handle_z_rev_range(store: &Store, key: String, start: i64, stop: i
 }
 
 pub(crate) fn handle_z_score(store: &Store, key: String, member: Bytes) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     match store.z_score(&key, &member) {
         Some(score) => Value::BulkString(Some(Bytes::from(score.to_string()))),
         None => Value::BulkString(None),
@@ -292,13 +391,22 @@ pub(crate) fn handle_z_score(store: &Store, key: String, member: Bytes) -> Value
 }
 
 pub(crate) fn handle_z_rem(store: &Store, key: String, members: Vec<Bytes>) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     Value::Integer(store.z_rem(&key, &members) as i64)
 }
 
 pub(crate) fn handle_z_card(store: &Store, key: String) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     Value::Integer(store.z_card(&key) as i64)
 }
 
 pub(crate) fn handle_z_count(store: &Store, key: String, min_score: f64, max_score: f64) -> Value {
+    if let Some(err) = ensure_type(store, &key, "zset") {
+        return err;
+    }
     Value::Integer(store.z_count(&key, min_score, max_score) as i64)
 }

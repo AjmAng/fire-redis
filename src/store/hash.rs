@@ -51,7 +51,16 @@ impl Store {
 
         match entry.value_mut() {
             StoredValue::Hash(map) => {
-                fields.iter().filter(|f| map.remove(*f).is_some()).count()
+                let removed = fields.iter().filter(|f| map.remove(*f).is_some()).count();
+                let should_remove = map.is_empty();
+                drop(entry);
+
+                if should_remove {
+                    self.inner.data.remove(key);
+                    self.inner.expirations.remove(key);
+                }
+
+                removed
             }
             _ => 0,
         }
@@ -146,5 +155,14 @@ mod tests {
         store.h_del("hash", &["field1".to_string()]);
         assert_eq!(store.h_get("hash", "field1"), None);
 
+    }
+
+    #[test]
+    fn test_hdel_removes_empty_hash_key() {
+        let store = Store::new();
+        store.h_set("hash".to_string(), "field1".to_string(), Bytes::from("value1"));
+
+        assert_eq!(store.h_del("hash", &["field1".to_string()]), 1);
+        assert!(!store.exists("hash"));
     }
 }

@@ -40,10 +40,23 @@ impl Store {
             return None;
         }
         let mut entry = self.inner.data.get_mut(key)?;
-        match entry.value_mut() {
-            StoredValue::List(list) => list.pop_front(),
+        let mut should_remove = false;
+        let result = match entry.value_mut() {
+            StoredValue::List(list) => {
+                let value = list.pop_front();
+                should_remove = list.is_empty();
+                value
+            }
             _ => None,
+        };
+        drop(entry);
+
+        if should_remove {
+            self.inner.data.remove(key);
+            self.inner.expirations.remove(key);
         }
+
+        result
     }
 
     pub fn r_pop(&self, key: &str) -> Option<Bytes> {
@@ -51,10 +64,23 @@ impl Store {
             return None;
         }
         let mut entry = self.inner.data.get_mut(key)?;
-        match entry.value_mut() {
-            StoredValue::List(list) => list.pop_back(),
+        let mut should_remove = false;
+        let result = match entry.value_mut() {
+            StoredValue::List(list) => {
+                let value = list.pop_back();
+                should_remove = list.is_empty();
+                value
+            }
             _ => None,
+        };
+        drop(entry);
+
+        if should_remove {
+            self.inner.data.remove(key);
+            self.inner.expirations.remove(key);
         }
+
+        result
     }
 
     pub fn l_range(&self, key: &str, start: i64, stop: i64) -> Vec<Bytes> {
@@ -145,5 +171,25 @@ mod tests {
             store.l_range("l", -2, -1),
             vec![Bytes::from("b"), Bytes::from("c")]
         );
+    }
+
+    #[test]
+    fn test_lrange_out_of_bounds_and_empty_list_cleanup() {
+        let store = Store::new();
+        store.r_push("l".to_string(), Bytes::from("a"));
+        store.r_push("l".to_string(), Bytes::from("b"));
+        store.r_push("l".to_string(), Bytes::from("c"));
+
+        assert_eq!(
+            store.l_range("l", -10, 1),
+            vec![Bytes::from("a"), Bytes::from("b")]
+        );
+        assert!(store.l_range("l", 5, 10).is_empty());
+        assert!(store.l_range("missing", 0, -1).is_empty());
+
+        assert_eq!(store.l_pop("l"), Some(Bytes::from("a")));
+        assert_eq!(store.l_pop("l"), Some(Bytes::from("b")));
+        assert_eq!(store.l_pop("l"), Some(Bytes::from("c")));
+        assert!(!store.exists("l"));
     }
 }

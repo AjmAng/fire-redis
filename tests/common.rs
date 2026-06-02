@@ -13,6 +13,31 @@ async fn start_test_server() -> (std::net::SocketAddr, Server) {
     (addr, server)
 }
 
+fn assert_wrongtype(response: Value) {
+    match response {
+        Value::Error(msg) => assert!(
+            msg.starts_with("WRONGTYPE"),
+            "expected WRONGTYPE error, got: {msg}"
+        ),
+        other => panic!("expected WRONGTYPE error, got: {:?}", other),
+    }
+}
+
+fn sorted_bulk_strings(response: Value) -> Vec<String> {
+    let mut items = match response {
+        Value::Array(Some(values)) => values
+            .into_iter()
+            .map(|value| match value {
+                Value::BulkString(Some(bytes)) => String::from_utf8(bytes.to_vec()).unwrap(),
+                other => panic!("expected bulk string array item, got: {:?}", other),
+            })
+            .collect::<Vec<_>>(),
+        other => panic!("expected array response, got: {:?}", other),
+    };
+    items.sort();
+    items
+}
+
 #[macro_export]
 macro_rules! cmd {
     ($framed:expr, $($arg:expr),* $(,)?) => {{
@@ -98,6 +123,139 @@ async fn test_server_set_get() {
 }
 
 #[tokio::test]
+async fn test_server_hash_command_coverage() {
+    let (addr, mut server) = start_test_server().await;
+    let server_handle = tokio::spawn(async move {
+        server.run().await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let mut framed = Framed::new(stream, RespCodec);
+
+    cmd!(framed, "HSET", "h1", "f1", "v1", "f2", "v2");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(2));
+
+    cmd!(framed, "HEXISTS", "h1", "f1");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(1));
+
+    cmd!(framed, "HLEN", "h1");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(2));
+
+    cmd!(framed, "HKEYS", "h1");
+    assert_eq!(
+        sorted_bulk_strings(framed.next().await.unwrap().unwrap()),
+        vec!["f1".to_string(), "f2".to_string()]
+    );
+
+    cmd!(framed, "HVALS", "h1");
+    assert_eq!(
+        sorted_bulk_strings(framed.next().await.unwrap().unwrap()),
+        vec!["v1".to_string(), "v2".to_string()]
+    );
+
+    cmd!(framed, "HGETALL", "h1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::Array(Some(vec![
+            Value::BulkString(Some(Bytes::from("f1"))),
+            Value::BulkString(Some(Bytes::from("v1"))),
+            Value::BulkString(Some(Bytes::from("f2"))),
+            Value::BulkString(Some(Bytes::from("v2"))),
+        ]))
+    );
+
+    cmd!(framed, "HDEL", "h1", "f1", "missing");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(1));
+
+    cmd!(framed, "HEXISTS", "h1", "f1");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(0));
+
+    cmd!(framed, "HDEL", "h1", "f2");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(1));
+
+    cmd!(framed, "EXISTS", "h1");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(0));
+
+    cmd!(framed, "TYPE", "h1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::SimpleString("none".to_string())
+    );
+
+    server_handle.abort();
+}
+
+#[tokio::test]
+async fn test_server_list_command_coverage_and_cleanup() {
+    let (addr, mut server) = start_test_server().await;
+    let server_handle = tokio::spawn(async move {
+        server.run().await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let mut framed = Framed::new(stream, RespCodec);
+
+    cmd!(framed, "RPUSH", "l2", "a", "b", "c");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(3));
+
+    cmd!(framed, "LLEN", "l2");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(3));
+
+    cmd!(framed, "LRANGE", "l2", "0", "-1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::Array(Some(vec![
+            Value::BulkString(Some(Bytes::from("a"))),
+            Value::BulkString(Some(Bytes::from("b"))),
+            Value::BulkString(Some(Bytes::from("c"))),
+        ]))
+    );
+
+    cmd!(framed, "LINDEX", "l2", "-1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::BulkString(Some(Bytes::from("c")))
+    );
+
+    cmd!(framed, "LPOP", "l2");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::BulkString(Some(Bytes::from("a")))
+    );
+
+    cmd!(framed, "RPOP", "l2");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::BulkString(Some(Bytes::from("c")))
+    );
+
+    cmd!(framed, "LPOP", "l2");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::BulkString(Some(Bytes::from("b")))
+    );
+
+    cmd!(framed, "EXISTS", "l2");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(0));
+
+    cmd!(framed, "TYPE", "l2");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::SimpleString("none".to_string())
+    );
+
+    cmd!(framed, "LRANGE", "l2", "0", "-1");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Array(Some(vec![])));
+
+    server_handle.abort();
+}
+
+
+#[tokio::test]
 async fn test_server_zadd_update_semantics() {
     let (addr, mut server) = start_test_server().await;
     let server_handle = tokio::spawn(async move {
@@ -128,6 +286,42 @@ async fn test_server_zadd_update_semantics() {
     assert_eq!(
         framed.next().await.unwrap().unwrap(),
         Value::BulkString(Some(Bytes::from("2")))
+    );
+
+    server_handle.abort();
+}
+
+#[tokio::test]
+async fn test_server_wrongtype_errors_for_typed_commands() {
+    let (addr, mut server) = start_test_server().await;
+    let server_handle = tokio::spawn(async move {
+        server.run().await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let mut framed = Framed::new(stream, RespCodec);
+
+    cmd!(framed, "SET", "plain", "value");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::SimpleString("OK".to_string()));
+
+    cmd!(framed, "LLEN", "plain");
+    assert_wrongtype(framed.next().await.unwrap().unwrap());
+
+    cmd!(framed, "SADD", "plain", "member");
+    assert_wrongtype(framed.next().await.unwrap().unwrap());
+
+    cmd!(framed, "HGET", "plain", "field");
+    assert_wrongtype(framed.next().await.unwrap().unwrap());
+
+    cmd!(framed, "ZCARD", "plain");
+    assert_wrongtype(framed.next().await.unwrap().unwrap());
+
+    cmd!(framed, "GET", "plain");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::BulkString(Some(Bytes::from("value")))
     );
 
     server_handle.abort();
@@ -308,6 +502,56 @@ async fn test_server_ttl_and_pttl() {
 
     server_handle.abort();
 }
+
+#[tokio::test]
+async fn test_server_lrange_and_set_edge_cases() {
+    let (addr, mut server) = start_test_server().await;
+    let server_handle = tokio::spawn(async move {
+        server.run().await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let mut framed = Framed::new(stream, RespCodec);
+
+    cmd!(framed, "RPUSH", "l1", "a", "b", "c");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(3));
+
+    cmd!(framed, "LRANGE", "l1", "-10", "1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::Array(Some(vec![
+            Value::BulkString(Some(Bytes::from("a"))),
+            Value::BulkString(Some(Bytes::from("b"))),
+        ]))
+    );
+
+    cmd!(framed, "LRANGE", "l1", "5", "10");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Array(Some(vec![])));
+
+    cmd!(framed, "SADD", "set1", "b", "a", "c", "a");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(3));
+
+    cmd!(framed, "SMEMBERS", "set1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::Array(Some(vec![
+            Value::BulkString(Some(Bytes::from("a"))),
+            Value::BulkString(Some(Bytes::from("b"))),
+            Value::BulkString(Some(Bytes::from("c"))),
+        ]))
+    );
+
+    cmd!(framed, "SREM", "set1", "a", "b", "c");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(3));
+
+    cmd!(framed, "EXISTS", "set1");
+    assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(0));
+
+    server_handle.abort();
+}
+
 #[tokio::test]
 async fn test_background_evict_removes_expired_key_from_store() {
     let (addr, mut server) = start_test_server().await;
@@ -368,6 +612,14 @@ async fn test_extended_commands_parse_and_execute() {
     assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(2));
     cmd!(framed, "SISMEMBER", "set1", "x");
     assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(1));
+    cmd!(framed, "SMEMBERS", "set1");
+    assert_eq!(
+        framed.next().await.unwrap().unwrap(),
+        Value::Array(Some(vec![
+            Value::BulkString(Some(Bytes::from("x"))),
+            Value::BulkString(Some(Bytes::from("y"))),
+        ]))
+    );
 
     cmd!(framed, "HSET", "h1", "f1", "v1", "f2", "v2");
     assert_eq!(framed.next().await.unwrap().unwrap(), Value::Integer(2));

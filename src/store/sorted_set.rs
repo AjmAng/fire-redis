@@ -130,6 +130,14 @@ impl Store {
                         removed += 1;
                     }
                 }
+                let should_remove = scores.is_empty();
+                drop(entry);
+
+                if should_remove {
+                    self.inner.data.remove(key);
+                    self.inner.expirations.remove(key);
+                }
+
                 removed
             }
             _ => 0,
@@ -211,5 +219,14 @@ mod tests {
 
         let range = store.z_range("z", 0, -1);
         assert_eq!(range, vec![(Bytes::from("a"), 3.0)]);
+    }
+
+    #[test]
+    fn test_zrem_removes_empty_sorted_set_key() {
+        let store = Store::new();
+        store.z_add("z".to_string(), 1.0, Bytes::from("a"));
+
+        assert_eq!(store.z_rem("z", &[Bytes::from("a")]), 1);
+        assert!(!store.exists("z"));
     }
 }

@@ -35,7 +35,16 @@ impl Store {
 
         match entry.value_mut() {
             StoredValue::Set(set) => {
-                members.iter().filter(|m| set.remove(*m)).count()
+                let removed = members.iter().filter(|m| set.remove(*m)).count();
+                let should_remove = set.is_empty();
+                drop(entry);
+
+                if should_remove {
+                    self.inner.data.remove(key);
+                    self.inner.expirations.remove(key);
+                }
+
+                removed
             }
             _ => 0,
         }
@@ -97,6 +106,14 @@ impl Store {
                         break;
                     }
                 }
+                let should_remove = set.is_empty();
+                drop(entry);
+
+                if should_remove {
+                    self.inner.data.remove(key);
+                    self.inner.expirations.remove(key);
+                }
+
                 result
             }
             _ => Vec::new(),
@@ -141,5 +158,15 @@ mod tests {
         let popped = store.s_pop("s", 10);
         assert_eq!(popped.len(), 3);
         assert_eq!(store.s_card("s"), 0);
+        assert!(!store.exists("s"));
+    }
+
+    #[test]
+    fn test_s_rem_removes_empty_set_key() {
+        let store = Store::new();
+        store.s_add("s".to_string(), vec![Bytes::from("a")]);
+
+        assert_eq!(store.s_rem("s", &[Bytes::from("a")]), 1);
+        assert!(!store.exists("s"));
     }
 }
