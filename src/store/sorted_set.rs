@@ -201,8 +201,8 @@ mod tests {
         store.z_add("z".to_string(), 1.0, Bytes::from("a"));
         store.z_add("z".to_string(), 2.0, Bytes::from("b"));
 
-        // Updating score should keep cardinality stable.
-        assert!(store.z_add("z".to_string(), 3.0, Bytes::from("a")));
+        // Updating score should keep cardinality stable and not count as a new insert.
+        assert!(!store.z_add("z".to_string(), 3.0, Bytes::from("a")));
         assert_eq!(store.z_card("z"), 2);
         assert_eq!(store.z_score("z", &Bytes::from("a")), Some(3.0));
 

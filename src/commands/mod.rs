@@ -820,4 +820,22 @@ mod tests {
             other => panic!("unexpected command: {:?}", other),
         }
     }
+
+    #[test]
+    fn test_parse_spop_rejects_too_many_args() {
+        let result = Command::try_from(vec![b("SPOP"), b("s"), b("1"), b("2")]);
+        assert!(matches!(result, Err(Value::Error(_))));
+    }
+
+    #[test]
+    fn test_parse_zrange_rejects_non_integer_index() {
+        let result = Command::try_from(vec![b("ZRANGE"), b("z"), b("0"), b("oops")]);
+        assert!(matches!(result, Err(Value::Error(_))));
+    }
+
+    #[test]
+    fn test_parse_zcount_rejects_wrong_arity() {
+        let result = Command::try_from(vec![b("ZCOUNT"), b("z"), b("1")]);
+        assert!(matches!(result, Err(Value::Error(_))));
+    }
 }
