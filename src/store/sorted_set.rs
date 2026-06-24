@@ -1,4 +1,4 @@
-use crate::store::{StoredValue, Store};
+use crate::store::{Store, StoredValue};
 use bytes::Bytes;
 use ordered_float::OrderedFloat;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -7,12 +7,14 @@ impl Store {
     pub fn z_add(&self, key: String, score: f64, member: Bytes) -> bool {
         self.check_expiration(&key);
 
-        let mut entry = self.inner.data.entry(key).or_insert_with(|| {
-            StoredValue::SortedSet {
+        let mut entry = self
+            .inner
+            .data
+            .entry(key)
+            .or_insert_with(|| StoredValue::SortedSet {
                 scores: HashMap::new(),
                 tree: BTreeMap::new(),
-            }
-        });
+            });
 
         match entry.value_mut() {
             StoredValue::SortedSet { scores, tree } => {
@@ -42,8 +44,10 @@ impl Store {
         if self.check_expiration(key) {
             return Vec::new();
         }
-        self.inner.data.get(key).map_or_else(Vec::new, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or_else(Vec::new, |entry| match entry.value() {
                 StoredValue::SortedSet { tree, .. } => {
                     let all_members: Vec<_> = tree
                         .iter()
@@ -62,16 +66,17 @@ impl Store {
                     all_members[start..=stop.min(all_members.len() - 1)].to_vec()
                 }
                 _ => Vec::new(),
-            }
-        })
+            })
     }
 
     pub fn z_rev_range(&self, key: &str, start: i64, stop: i64) -> Vec<(Bytes, f64)> {
         if self.check_expiration(key) {
             return Vec::new();
         }
-        self.inner.data.get(key).map_or_else(Vec::new, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or_else(Vec::new, |entry| match entry.value() {
                 StoredValue::SortedSet { tree, .. } => {
                     let all_members: Vec<_> = tree
                         .iter()
@@ -91,20 +96,20 @@ impl Store {
                     all_members[start..=stop.min(all_members.len() - 1)].to_vec()
                 }
                 _ => Vec::new(),
-            }
-        })
+            })
     }
 
     pub fn z_score(&self, key: &str, member: &Bytes) -> Option<f64> {
         if self.check_expiration(key) {
             return None;
         }
-        self.inner.data.get(key).and_then(|entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .and_then(|entry| match entry.value() {
                 StoredValue::SortedSet { scores, .. } => scores.get(member).map(|s| s.0),
                 _ => None,
-            }
-        })
+            })
     }
 
     pub fn z_rem(&self, key: &str, members: &[Bytes]) -> usize {
@@ -148,28 +153,29 @@ impl Store {
         if self.check_expiration(key) {
             return 0;
         }
-        self.inner.data.get(key).map_or(0, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or(0, |entry| match entry.value() {
                 StoredValue::SortedSet { scores, .. } => scores.len(),
                 _ => 0,
-            }
-        })
+            })
     }
 
     pub fn z_count(&self, key: &str, min_score: f64, max_score: f64) -> usize {
         if self.check_expiration(key) {
             return 0;
         }
-        self.inner.data.get(key).map_or(0, |entry| {
-            match entry.value() {
-                StoredValue::SortedSet { tree, .. } => {
-                    tree.range(OrderedFloat(min_score)..=OrderedFloat(max_score))
-                        .map(|(_, members)| members.len())
-                        .sum()
-                }
+        self.inner
+            .data
+            .get(key)
+            .map_or(0, |entry| match entry.value() {
+                StoredValue::SortedSet { tree, .. } => tree
+                    .range(OrderedFloat(min_score)..=OrderedFloat(max_score))
+                    .map(|(_, members)| members.len())
+                    .sum(),
                 _ => 0,
-            }
-        })
+            })
     }
 }
 

@@ -4,8 +4,8 @@
 //! AOF (Append Only File): Log of write operations
 
 pub mod aof;
-pub mod rdb;
 pub mod manager;
+pub mod rdb;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

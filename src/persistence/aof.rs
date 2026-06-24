@@ -3,6 +3,7 @@
 //! AOF logs every write operation to a file for durability.
 
 use super::{AofFsyncPolicy, PersistenceError, Result};
+use crate::metrics::Metrics;
 use crate::resp::{RespCodec, Value};
 use crate::store::Store;
 use bytes::BytesMut;
@@ -28,30 +29,31 @@ impl AofWriter {
             .append(true)
             .open(path)
             .await?;
-        
+
         let metadata = file.metadata().await?;
         let bytes_written = metadata.len();
-        
+
         Ok(Self {
             file,
             fsync_policy,
             bytes_written,
         })
     }
-    
+
     /// Append a command to the AOF file
     pub async fn append(&mut self, command: &Value) -> Result<()> {
         let mut buf = BytesMut::new();
         let mut codec = RespCodec;
-        
+
         // Serialize the command to RESP format
-        codec.encode(command.clone(), &mut buf)
+        codec
+            .encode(command.clone(), &mut buf)
             .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
-        
+
         // Write to file
         self.file.write_all(&buf).await?;
         self.bytes_written += buf.len() as u64;
-        
+
         // Handle fsync based on policy
         match self.fsync_policy {
             AofFsyncPolicy::Always => {
@@ -64,21 +66,21 @@ impl AofWriter {
                 // Let OS handle it
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Force fsync to disk
     pub async fn fsync(&mut self) -> Result<()> {
         self.file.sync_all().await?;
         Ok(())
     }
-    
+
     /// Get total bytes written
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
-    
+
     /// Truncate and reset the file (used for rewrite)
     pub async fn truncate(&mut self) -> Result<()> {
         self.file.set_len(0).await?;
@@ -93,37 +95,46 @@ pub struct AofReplayer;
 impl AofReplayer {
     /// Replay AOF file to restore state
     pub async fn replay(store: &Store, path: &Path) -> Result<u64> {
+        Self::replay_with_metrics(store, path, &Metrics::new()).await
+    }
+
+    /// Replay AOF file with optional metrics tracking.
+    pub async fn replay_with_metrics(
+        store: &Store,
+        path: &Path,
+        metrics: &Metrics,
+    ) -> Result<u64> {
         if !path.exists() {
             return Ok(0);
         }
-        
+
         let file = File::open(path).await?;
         let reader = BufReader::new(file);
         let lines = reader.lines();
-        
+
         let mut command_count = 0u64;
-        
+
         // AOF is in RESP format, so we need to parse it properly
         // For simplicity, we'll read the raw bytes and decode RESP
         drop(lines);
-        
+
         let file = File::open(path).await?;
         let mut reader = BufReader::new(file);
         let mut raw_buffer = Vec::new();
         reader.read_to_end(&mut raw_buffer).await?;
-        
+
         let mut bytes = BytesMut::from(&raw_buffer[..]);
         let mut codec = RespCodec;
-        
+
         loop {
             if bytes.is_empty() {
                 break;
             }
-            
+
             match codec.decode(&mut bytes) {
                 Ok(Some(value)) => {
                     // Execute the command
-                    if let Err(e) = Self::execute_command(store, value).await {
+                    if let Err(e) = Self::execute_command(store, value, metrics).await {
                         warn!("Failed to execute AOF command: {}", e);
                     }
                     command_count += 1;
@@ -138,17 +149,17 @@ impl AofReplayer {
                 }
             }
         }
-        
+
         info!("AOF replay complete: {} commands executed", command_count);
         Ok(command_count)
     }
-    
-    async fn execute_command(store: &Store, value: Value) -> crate::Result<()> {
+
+    async fn execute_command(store: &Store, value: Value, metrics: &Metrics) -> crate::Result<()> {
         use crate::commands::Command;
-        
+
         if let Value::Array(Some(args)) = value {
             if let Ok(cmd) = Command::try_from(args) {
-                cmd.execute(store);
+                cmd.execute(store, metrics);
             }
         }
         Ok(())
@@ -160,44 +171,53 @@ pub async fn rewrite_aof(store: &Store, aof_path: &Path, temp_path: &Path) -> Re
     // Create temporary AOF file with current state
     let mut temp_writer = AofWriter::new(temp_path, AofFsyncPolicy::No).await?;
     let mut codec = RespCodec;
-    
+
     // Get all keys and their values
     let keys = store.keys();
     let mut commands_written = 0u64;
-    
+
     for key in keys {
         if let Some(value) = store.get_for_restore(&key) {
+            let ttl_ms = store.ttl_ms_for_persistence(&key);
             // Generate appropriate command based on value type
-            let commands = value_to_commands(&key, &value);
-            
+            let commands = value_to_commands(&key, &value, ttl_ms);
+
             for cmd in commands {
                 let mut buf = BytesMut::new();
-                codec.encode(cmd, &mut buf)
+                codec
+                    .encode(cmd, &mut buf)
                     .map_err(|e| PersistenceError::Serialization(e.to_string()))?;
                 temp_writer.file.write_all(&buf).await?;
                 commands_written += 1;
             }
         }
     }
-    
+
     // Sync temp file
     temp_writer.fsync().await?;
     drop(temp_writer);
-    
+
     // Atomically replace old AOF with new one
     tokio::fs::rename(temp_path, aof_path).await?;
-    
-    info!("AOF rewrite complete: {} commands written", commands_written);
+
+    info!(
+        "AOF rewrite complete: {} commands written",
+        commands_written
+    );
     Ok(commands_written)
 }
 
 /// Convert a StoredValue back to RESP commands
-fn value_to_commands(key: &str, value: &crate::store::StoredValue) -> Vec<Value> {
+fn value_to_commands(
+    key: &str,
+    value: &crate::store::StoredValue,
+    ttl_ms: Option<u64>,
+) -> Vec<Value> {
     use crate::resp::Value;
     use bytes::Bytes;
-    
+
     let mut commands = Vec::new();
-    
+
     match value {
         crate::store::StoredValue::String(bytes) => {
             commands.push(Value::Array(Some(vec![
@@ -257,7 +277,18 @@ fn value_to_commands(key: &str, value: &crate::store::StoredValue) -> Vec<Value>
             }
         }
     }
-    
+
+    // Preserve TTL by appending an EXPIRE command. Use a minimum of 1 second
+    // because our EXPIRE command takes seconds and we do not yet support PEXPIRE.
+    if let Some(ms) = ttl_ms {
+        let seconds = (ms.div_ceil(1000)).max(1);
+        commands.push(Value::Array(Some(vec![
+            Value::BulkString(Some(Bytes::from_static(b"EXPIRE"))),
+            Value::BulkString(Some(Bytes::from(key.to_string()))),
+            Value::BulkString(Some(Bytes::from(seconds.to_string()))),
+        ])));
+    }
+
     commands
 }
 
@@ -271,7 +302,7 @@ impl AofChannel {
     pub fn new(sender: mpsc::UnboundedSender<Value>) -> Self {
         Self { sender }
     }
-    
+
     pub fn log(&self, command: Value) {
         let _ = self.sender.send(command);
     }
@@ -281,15 +312,45 @@ impl AofChannel {
 pub fn should_log_to_aof(command_name: &str) -> bool {
     // Don't log read-only commands
     let read_commands = [
-        "GET", "MGET", "EXISTS", "TTL", "PTTL", "TYPE", "KEYS", "SCAN",
-        "LRANGE", "LLEN", "LINDEX",
-        "SMEMBERS", "SCARD", "SISMEMBER", "SRANDMEMBER",
-        "HGET", "HMGET", "HGETALL", "HKEYS", "HVALS", "HLEN", "HEXISTS",
-        "ZRANGE", "ZREVRANGE", "ZRANGEBYSCORE", "ZREVRANGEBYSCORE",
-        "ZCARD", "ZSCORE", "ZRANK", "ZREVRANK", "ZCOUNT",
-        "PING", "ECHO", "INFO", "QUIT", "SELECT", "DBSIZE",
+        "GET",
+        "MGET",
+        "EXISTS",
+        "TTL",
+        "PTTL",
+        "TYPE",
+        "KEYS",
+        "SCAN",
+        "LRANGE",
+        "LLEN",
+        "LINDEX",
+        "SMEMBERS",
+        "SCARD",
+        "SISMEMBER",
+        "SRANDMEMBER",
+        "HGET",
+        "HMGET",
+        "HGETALL",
+        "HKEYS",
+        "HVALS",
+        "HLEN",
+        "HEXISTS",
+        "ZRANGE",
+        "ZREVRANGE",
+        "ZRANGEBYSCORE",
+        "ZREVRANGEBYSCORE",
+        "ZCARD",
+        "ZSCORE",
+        "ZRANK",
+        "ZREVRANK",
+        "ZCOUNT",
+        "PING",
+        "ECHO",
+        "INFO",
+        "QUIT",
+        "SELECT",
+        "DBSIZE",
     ];
-    
+
     !read_commands.contains(&command_name.to_ascii_uppercase().as_str())
 }
 
@@ -297,12 +358,12 @@ pub fn should_log_to_aof(command_name: &str) -> bool {
 pub fn format_command_for_aof(cmd: &str, args: &[String]) -> Value {
     use crate::resp::Value;
     use bytes::Bytes;
-    
+
     let mut array = vec![Value::BulkString(Some(Bytes::from(cmd.to_string())))];
     for arg in args {
         array.push(Value::BulkString(Some(Bytes::from(arg.clone()))));
     }
-    
+
     Value::Array(Some(array))
 }
 
@@ -314,27 +375,29 @@ mod tests {
     #[tokio::test]
     async fn test_aof_append() {
         let temp_path = std::env::temp_dir().join("test.aof");
-        
-        let mut writer = AofWriter::new(&temp_path, AofFsyncPolicy::No).await.unwrap();
-        
+
+        let mut writer = AofWriter::new(&temp_path, AofFsyncPolicy::No)
+            .await
+            .unwrap();
+
         let cmd = Value::Array(Some(vec![
             Value::BulkString(Some(Bytes::from_static(b"SET"))),
             Value::BulkString(Some(Bytes::from_static(b"key1"))),
             Value::BulkString(Some(Bytes::from_static(b"value1"))),
         ]));
-        
+
         writer.append(&cmd).await.unwrap();
         writer.fsync().await.unwrap();
-        
+
         let content = tokio::fs::read_to_string(&temp_path).await.unwrap();
         assert!(content.contains("SET"));
         assert!(content.contains("key1"));
         assert!(content.contains("value1"));
-        
+
         // Cleanup
         let _ = tokio::fs::remove_file(&temp_path).await;
     }
-    
+
     #[test]
     fn test_should_log_to_aof() {
         assert!(!should_log_to_aof("GET"));

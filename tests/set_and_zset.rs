@@ -35,7 +35,10 @@ async fn test_server_set_spop_and_scard_coverage() {
     assert_eq!(recv(&mut framed).await, Value::Integer(1));
 
     send_cmd(&mut framed, &["SPOP", "s2"]).await;
-    assert!(matches!(recv(&mut framed).await, Value::BulkString(Some(_))));
+    assert!(matches!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(_))
+    ));
 
     send_cmd(&mut framed, &["EXISTS", "s2"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(0));
@@ -74,7 +77,10 @@ async fn test_server_zadd_update_semantics() {
     );
 
     send_cmd(&mut framed, &["ZSCORE", "z1", "m1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::BulkString(Some(Bytes::from("2"))));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(Bytes::from("2")))
+    );
 
     server_handle.abort();
 }
@@ -133,4 +139,3 @@ async fn test_server_zset_range_count_and_removal_coverage() {
 
     server_handle.abort();
 }
-

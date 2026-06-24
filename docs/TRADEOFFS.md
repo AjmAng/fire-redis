@@ -24,3 +24,10 @@
 - Observability and recovery explanation (`docs/OBSERVABILITY.md`)
 - Small but meaningful test + perf baseline
 
+## Persistence tradeoffs
+
+- **RDB + AOF startup semantics**: When both files exist, we load AOF only (Redis-compatible). RDB acts as a fallback when AOF is disabled or missing.
+- **AOF rewrite TTL**: Rewrite emits an `EXPIRE` command after each key to preserve TTL. We use seconds granularity because `PEXPIRE` is not implemented; sub-second TTLs may be rounded up to 1 second.
+- **AOF ordering**: Commands are logged before execution for simplicity. This means a failed conditional write (e.g., `SET NX` on an existing key) is still appended and will replay, which differs from Redis. Documented as a known toy-scope limitation.
+- **Crash consistency**: We do not guarantee fsync ordering between RDB and AOF or partial-write recovery. The implementation favors explainability over production-grade durability.
+

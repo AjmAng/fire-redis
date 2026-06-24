@@ -1,4 +1,4 @@
-use crate::store::{StoredValue, Store};
+use crate::store::{Store, StoredValue};
 use bytes::Bytes;
 use std::collections::HashSet;
 
@@ -6,9 +6,11 @@ impl Store {
     pub fn s_add(&self, key: String, members: Vec<Bytes>) -> usize {
         self.check_expiration(&key);
 
-        let mut entry = self.inner.data.entry(key).or_insert_with(|| {
-            StoredValue::Set(HashSet::new())
-        });
+        let mut entry = self
+            .inner
+            .data
+            .entry(key)
+            .or_insert_with(|| StoredValue::Set(HashSet::new()));
 
         match entry.value_mut() {
             StoredValue::Set(set) => {
@@ -54,36 +56,39 @@ impl Store {
         if self.check_expiration(key) {
             return Vec::new();
         }
-        self.inner.data.get(key).map_or_else(Vec::new, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or_else(Vec::new, |entry| match entry.value() {
                 StoredValue::Set(set) => set.iter().cloned().collect(),
                 _ => Vec::new(),
-            }
-        })
+            })
     }
 
     pub fn s_is_member(&self, key: &str, member: &Bytes) -> bool {
         if self.check_expiration(key) {
             return false;
         }
-        self.inner.data.get(key).map_or(false, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or(false, |entry| match entry.value() {
                 StoredValue::Set(set) => set.contains(member),
                 _ => false,
-            }
-        })
+            })
     }
 
     pub fn s_card(&self, key: &str) -> usize {
         if self.check_expiration(key) {
             return 0;
         }
-        self.inner.data.get(key).map_or(0, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or(0, |entry| match entry.value() {
                 StoredValue::Set(set) => set.len(),
                 _ => 0,
-            }
-        })
+            })
     }
 
     pub fn s_pop(&self, key: &str, count: usize) -> Vec<Bytes> {

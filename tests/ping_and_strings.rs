@@ -19,7 +19,10 @@ async fn test_server_ping() {
     let mut framed = Framed::new(stream, RespCodec);
 
     send_cmd(&mut framed, &["PING"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("PONG".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("PONG".to_string())
+    );
 
     send_cmd(&mut framed, &["ECHO", "Hello, Redis!"]).await;
     assert_eq!(
@@ -43,7 +46,10 @@ async fn test_server_set_get() {
     let mut framed = Framed::new(stream, RespCodec);
 
     send_cmd(&mut framed, &["SET", "test_key", "test_value"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["GET", "test_key"]).await;
     assert_eq!(
@@ -76,22 +82,34 @@ async fn test_set_nx_xx_conditions() {
     let mut framed = Framed::new(stream, RespCodec);
 
     send_cmd(&mut framed, &["SET", "k1", "v1", "NX"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["SET", "k1", "v2", "NX"]).await;
     assert_eq!(recv(&mut framed).await, Value::Null);
 
     send_cmd(&mut framed, &["GET", "k1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::BulkString(Some(Bytes::from("v1"))));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(Bytes::from("v1")))
+    );
 
     send_cmd(&mut framed, &["SET", "missing", "v0", "XX"]).await;
     assert_eq!(recv(&mut framed).await, Value::Null);
 
     send_cmd(&mut framed, &["SET", "k1", "v3", "XX"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["GET", "k1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::BulkString(Some(Bytes::from("v3"))));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(Bytes::from("v3")))
+    );
 
     server_handle.abort();
 }
@@ -112,19 +130,28 @@ async fn test_server_decr_and_mget_mset() {
     assert_eq!(recv(&mut framed).await, Value::Integer(-1));
 
     send_cmd(&mut framed, &["SET", "counter", "5"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["DECR", "counter"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(4));
 
     send_cmd(&mut framed, &["SET", "not_int", "hello"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["DECR", "not_int"]).await;
     assert!(matches!(recv(&mut framed).await, Value::Error(_)));
 
     send_cmd(&mut framed, &["MSET", "k1", "v1", "k2", "v2"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["MGET", "k1", "missing", "k2"]).await;
     assert_eq!(
@@ -152,7 +179,10 @@ async fn test_server_wrongtype_errors_for_typed_commands() {
     let mut framed = Framed::new(stream, RespCodec);
 
     send_cmd(&mut framed, &["SET", "plain", "value"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["LLEN", "plain"]).await;
     assert_wrongtype(recv(&mut framed).await);
@@ -167,7 +197,10 @@ async fn test_server_wrongtype_errors_for_typed_commands() {
     assert_wrongtype(recv(&mut framed).await);
 
     send_cmd(&mut framed, &["GET", "plain"]).await;
-    assert_eq!(recv(&mut framed).await, Value::BulkString(Some(Bytes::from("value"))));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(Bytes::from("value")))
+    );
 
     server_handle.abort();
 }
@@ -237,4 +270,3 @@ async fn test_server_invalid_numeric_argument_errors() {
 
     server_handle.abort();
 }
-

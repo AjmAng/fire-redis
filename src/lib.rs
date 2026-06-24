@@ -4,6 +4,8 @@
 //! key-value store with async I/O and memory-safe operations.
 
 pub mod commands;
+pub mod http;
+pub mod metrics;
 pub mod persistence;
 pub mod resp;
 pub mod server;
@@ -21,7 +23,7 @@ pub enum RedisError {
     Io(#[from] std::io::Error),
 
     #[error("RESP protocol error: {0}")]
-    Resp(#[from] resp::RespError),  
+    Resp(#[from] resp::RespError),
 
     #[error("Command error: {0}")]
     Command(String),

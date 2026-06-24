@@ -1,6 +1,6 @@
 use clap::Parser;
-use futures::{SinkExt, StreamExt};
 use fire_redis::{RespCodec, Value};
+use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
@@ -48,7 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// interactive REPL
-async fn run_interactive(framed: &mut Framed<TcpStream, RespCodec>) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_interactive(
+    framed: &mut Framed<TcpStream, RespCodec>,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("redis-cli connected. Type 'QUIT' to exit.");
     println!("Ready:");
 
@@ -61,9 +63,7 @@ async fn run_interactive(framed: &mut Framed<TcpStream, RespCodec>) -> Result<()
             continue;
         }
 
-        let parts: Vec<String> = line.split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        let parts: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
 
         if parts.is_empty() {
             continue;
@@ -74,13 +74,11 @@ async fn run_interactive(framed: &mut Framed<TcpStream, RespCodec>) -> Result<()
             break;
         }
 
-
         let resp = parse_args_to_resp(&parts);
         if let Err(e) = framed.send(resp).await {
             error!("Failed to send command: {}", e);
             continue;
         }
-
 
         match framed.next().await {
             Some(Ok(response)) => print_response(&response),
@@ -97,7 +95,8 @@ async fn run_interactive(framed: &mut Framed<TcpStream, RespCodec>) -> Result<()
 
 /// transform Vec<String> to RESP Array of Bulk Strings
 fn parse_args_to_resp(args: &[String]) -> Value {
-    let bulk_strings: Vec<Value> = args.iter()
+    let bulk_strings: Vec<Value> = args
+        .iter()
         .map(|s| Value::BulkString(Some(bytes::Bytes::from(s.clone()))))
         .collect();
 
@@ -110,12 +109,10 @@ fn print_response(value: &Value) {
         Value::SimpleString(s) => println!("\"{}\"", s),
         Value::Integer(i) => println!("(integer) {}", i),
         Value::BulkString(None) | Value::Null => println!("(nil)"),
-        Value::BulkString(Some(b)) => {
-            match std::str::from_utf8(b) {
-                Ok(s) => println!("\"{}\"", s),
-                Err(_) => println!("{:?}", b),
-            }
-        }
+        Value::BulkString(Some(b)) => match std::str::from_utf8(b) {
+            Ok(s) => println!("\"{}\"", s),
+            Err(_) => println!("{:?}", b),
+        },
         Value::Error(e) => println!("(error) {}", e),
         Value::Array(Some(arr)) => {
             if arr.is_empty() {

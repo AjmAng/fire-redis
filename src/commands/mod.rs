@@ -1,4 +1,4 @@
-use crate::{resp::Value, store::Store};
+use crate::{metrics::Metrics, resp::Value, store::Store};
 use bytes::Bytes;
 
 pub mod conn;
@@ -89,6 +89,7 @@ impl TryFrom<Vec<Value>> for Command {
         match cmd.as_slice() {
             b"PING" => Ok(Command::Ping),
             b"ECHO" => parse_echo(&args),
+            b"INFO" => Ok(Command::Info),
             b"GET" => parse_get(&args),
             b"SET" => parse_set(&args),
             b"DEL" => parse_del(&args),
@@ -142,12 +143,12 @@ impl TryFrom<Vec<Value>> for Command {
 }
 
 impl Command {
-    pub fn execute(self, store: &Store) -> Value {
+    pub fn execute(self, store: &Store, metrics: &Metrics) -> Value {
         match self {
             Command::Ping => conn::handle_ping(),
             Command::Echo(msg) => conn::handle_echo(msg),
             Command::Quit => conn::handle_quit(),
-            Command::Info => conn::handle_info(),
+            Command::Info => conn::handle_info(metrics),
 
             Command::Get(k) => data::handle_get(store, k),
             Command::Set(k, v, px, condition) => data::handle_set(store, k, v, px, condition),
@@ -770,10 +771,13 @@ mod tests {
     fn test_parse_mset() {
         let cmd = Command::try_from(vec![b("MSET"), b("k1"), b("v1"), b("k2"), b("v2")]).unwrap();
         match cmd {
-            Command::MSet(entries) => assert_eq!(entries, vec![
-                ("k1".to_string(), Bytes::from("v1")),
-                ("k2".to_string(), Bytes::from("v2")),
-            ]),
+            Command::MSet(entries) => assert_eq!(
+                entries,
+                vec![
+                    ("k1".to_string(), Bytes::from("v1")),
+                    ("k2".to_string(), Bytes::from("v2")),
+                ]
+            ),
             other => panic!("unexpected command: {:?}", other),
         }
     }

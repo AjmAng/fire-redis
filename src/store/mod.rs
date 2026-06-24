@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::metrics::Metrics;
+
 pub mod hash;
 pub mod list;
 pub mod set;
@@ -27,6 +29,7 @@ pub enum StoredValue {
 struct StoreInner {
     data: DashMap<String, StoredValue>,
     expirations: DashMap<String, Instant>,
+    metrics: Arc<Metrics>,
 }
 
 #[derive(Clone, Debug)]
@@ -36,12 +39,21 @@ pub struct Store {
 
 impl Store {
     pub fn new() -> Self {
+        Self::with_metrics(Arc::new(Metrics::new()))
+    }
+
+    pub fn with_metrics(metrics: Arc<Metrics>) -> Self {
         Self {
             inner: Arc::new(StoreInner {
                 data: DashMap::new(),
                 expirations: DashMap::new(),
+                metrics,
             }),
         }
+    }
+
+    pub fn metrics(&self) -> &Arc<Metrics> {
+        &self.inner.metrics
     }
 
     pub(crate) fn check_expiration(&self, key: &str) -> bool {
@@ -89,6 +101,7 @@ impl Store {
             self.inner.expirations.remove(&key);
         }
 
+        self.inner.metrics.record_evicted(evicted as u64);
         evicted
     }
 
@@ -128,6 +141,17 @@ impl Store {
     /// Get value for persistence restore (without expiration check)
     pub fn get_for_restore(&self, key: &str) -> Option<StoredValue> {
         self.inner.data.get(key).map(|entry| entry.value().clone())
+    }
+
+    /// Get remaining TTL in milliseconds for a key (used during AOF rewrite)
+    pub fn ttl_ms_for_persistence(&self, key: &str) -> Option<u64> {
+        self.inner.expirations.get(key).map(|entry| {
+            entry
+                .value()
+                .saturating_duration_since(Instant::now())
+                .as_millis()
+                .max(1) as u64
+        })
     }
 
     /// Clear all data (used during FLUSHALL)
@@ -174,6 +198,11 @@ impl Store {
             .iter()
             .map(|entry| entry.key().clone())
             .collect()
+    }
+
+    /// Return the total number of keys (without triggering eviction).
+    pub fn key_count(&self) -> usize {
+        self.inner.data.len()
     }
 
     pub fn flush_all(&self) {

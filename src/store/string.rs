@@ -1,4 +1,4 @@
-use crate::store::{StoredValue, Store};
+use crate::store::{Store, StoredValue};
 use bytes::Bytes;
 
 impl Store {
@@ -18,9 +18,7 @@ impl Store {
                 let current_num: i64 = current_str
                     .parse()
                     .map_err(|_| "Value is not an integer".to_string())?;
-                let new_num = current_num
-                    .checked_add(delta)
-                    .ok_or("Integer overflow")?;
+                let new_num = current_num.checked_add(delta).ok_or("Integer overflow")?;
                 *b = Bytes::from(new_num.to_string());
                 Ok(new_num)
             }
@@ -40,7 +38,9 @@ impl Store {
     }
 
     pub fn set(&self, key: String, value: Bytes, expire_ms: Option<u64>) {
-        self.inner.data.insert(key.clone(), StoredValue::String(value));
+        self.inner
+            .data
+            .insert(key.clone(), StoredValue::String(value));
         self.set_expiration(&key, expire_ms);
         tracing::debug!("Set key, total keys: {}", self.inner.data.len());
     }
@@ -48,9 +48,11 @@ impl Store {
     pub fn append(&self, key: String, value: Bytes) -> usize {
         self.check_expiration(&key);
 
-        let mut entry = self.inner.data.entry(key).or_insert_with(|| {
-            StoredValue::String(Bytes::new())
-        });
+        let mut entry = self
+            .inner
+            .data
+            .entry(key)
+            .or_insert_with(|| StoredValue::String(Bytes::new()));
 
         match entry.value_mut() {
             StoredValue::String(existing) => {
@@ -68,12 +70,13 @@ impl Store {
         if self.check_expiration(key) {
             return 0;
         }
-        self.inner.data.get(key).map_or(0, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or(0, |entry| match entry.value() {
                 StoredValue::String(b) => b.len(),
                 _ => 0,
-            }
-        })
+            })
     }
 
     pub fn incr(&self, key: &String) -> Result<i64, String> {

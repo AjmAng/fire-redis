@@ -13,6 +13,17 @@ pub async fn start_test_server() -> (std::net::SocketAddr, Server) {
     (addr, server)
 }
 
+pub async fn start_test_server_with_persistence(
+    persistence: fire_redis::persistence::PersistenceConfig,
+) -> (std::net::SocketAddr, Server) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = Server::from_listener_with_config(listener, persistence)
+        .await
+        .unwrap();
+    (addr, server)
+}
+
 pub async fn send_cmd(framed: &mut Framed<TcpStream, RespCodec>, args: &[&str]) {
     let command = Value::Array(Some(
         args.iter()
@@ -60,4 +71,3 @@ pub fn sorted_bulk_strings(response: Value) -> Vec<String> {
     items.sort();
     items
 }
-

@@ -63,7 +63,10 @@ async fn test_server_hash_command_coverage() {
     assert_eq!(recv(&mut framed).await, Value::Integer(0));
 
     send_cmd(&mut framed, &["TYPE", "h1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("none".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("none".to_string())
+    );
 
     server_handle.abort();
 }
@@ -124,7 +127,10 @@ async fn test_server_list_command_coverage_and_cleanup() {
     assert_eq!(recv(&mut framed).await, Value::Integer(0));
 
     send_cmd(&mut framed, &["TYPE", "l2"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("none".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("none".to_string())
+    );
 
     send_cmd(&mut framed, &["LRANGE", "l2", "0", "-1"]).await;
     assert_eq!(recv(&mut framed).await, Value::Array(Some(vec![])));
@@ -180,4 +186,3 @@ async fn test_server_lrange_and_set_edge_cases() {
 
     server_handle.abort();
 }
-

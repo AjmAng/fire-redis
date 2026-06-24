@@ -1,4 +1,4 @@
-use crate::store::{StoredValue, Store};
+use crate::store::{Store, StoredValue};
 use bytes::Bytes;
 use std::collections::VecDeque;
 
@@ -6,9 +6,11 @@ impl Store {
     pub fn l_push(&self, key: String, value: Bytes) -> usize {
         self.check_expiration(&key);
 
-        let mut entry = self.inner.data.entry(key).or_insert_with(|| {
-            StoredValue::List(VecDeque::new())
-        });
+        let mut entry = self
+            .inner
+            .data
+            .entry(key)
+            .or_insert_with(|| StoredValue::List(VecDeque::new()));
 
         match entry.value_mut() {
             StoredValue::List(list) => {
@@ -22,9 +24,11 @@ impl Store {
     pub fn r_push(&self, key: String, value: Bytes) -> usize {
         self.check_expiration(&key);
 
-        let mut entry = self.inner.data.entry(key).or_insert_with(|| {
-            StoredValue::List(VecDeque::new())
-        });
+        let mut entry = self
+            .inner
+            .data
+            .entry(key)
+            .or_insert_with(|| StoredValue::List(VecDeque::new()));
 
         match entry.value_mut() {
             StoredValue::List(list) => {
@@ -111,20 +115,23 @@ impl Store {
         if self.check_expiration(key) {
             return 0;
         }
-        self.inner.data.get(key).map_or(0, |entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .map_or(0, |entry| match entry.value() {
                 StoredValue::List(list) => list.len(),
                 _ => 0,
-            }
-        })
+            })
     }
 
     pub fn l_index(&self, key: &str, index: i64) -> Option<Bytes> {
         if self.check_expiration(key) {
             return None;
         }
-        self.inner.data.get(key).and_then(|entry| {
-            match entry.value() {
+        self.inner
+            .data
+            .get(key)
+            .and_then(|entry| match entry.value() {
                 StoredValue::List(list) => {
                     let idx = if index < 0 {
                         list.len() as i64 + index
@@ -134,8 +141,7 @@ impl Store {
                     list.get(idx).cloned()
                 }
                 _ => None,
-            }
-        })
+            })
     }
 }
 

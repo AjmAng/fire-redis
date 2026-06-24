@@ -18,7 +18,10 @@ async fn test_server_expire() {
     let mut framed = Framed::new(stream, RespCodec);
 
     send_cmd(&mut framed, &["SET", "temp_key", "temp_value"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["EXPIRE", "temp_key", "1"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(1));
@@ -50,7 +53,10 @@ async fn test_server_ttl_and_pttl() {
     assert_eq!(recv(&mut framed).await, Value::Integer(-2));
 
     send_cmd(&mut framed, &["SET", "plain_key", "value"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["TTL", "plain_key"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(-1));
@@ -98,7 +104,10 @@ async fn test_background_evict_removes_expired_key_from_store() {
     let mut framed = Framed::new(stream, RespCodec);
 
     send_cmd(&mut framed, &["SET", "evict_me", "value"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["EXPIRE", "evict_me", "1"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(1));
@@ -111,4 +120,3 @@ async fn test_background_evict_removes_expired_key_from_store() {
 
     server_handle.abort();
 }
-

@@ -116,11 +116,16 @@ fn parse_bulk_string(buf: &[u8]) -> Result<Option<(Value, usize)>, RespError> {
     offset += len;
 
     if &buf[offset..offset + 2] != b"\r\n" {
-        return Err(RespError::Invalid("Bulk string missing CRLF terminator".to_string()));
+        return Err(RespError::Invalid(
+            "Bulk string missing CRLF terminator".to_string(),
+        ));
     }
     offset += 2;
 
-    Ok(Some((Value::BulkString(Some(Bytes::copy_from_slice(data))), offset)))
+    Ok(Some((
+        Value::BulkString(Some(Bytes::copy_from_slice(data))),
+        offset,
+    )))
 }
 
 fn parse_array(buf: &[u8]) -> Result<Option<(Value, usize)>, RespError> {
@@ -267,7 +272,9 @@ mod tests {
         let second = codec.decode(&mut buf).unwrap();
         assert_eq!(
             second,
-            Some(Value::Array(Some(vec![Value::BulkString(Some(Bytes::from("PING")))])))
+            Some(Value::Array(Some(vec![Value::BulkString(Some(
+                Bytes::from("PING")
+            ))])))
         );
         assert!(buf.is_empty());
     }

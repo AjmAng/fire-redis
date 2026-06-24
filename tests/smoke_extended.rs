@@ -28,7 +28,10 @@ async fn test_extended_commands_parse_and_execute() {
     assert_eq!(recv(&mut framed).await, Value::Integer(2));
 
     send_cmd(&mut framed, &["LINDEX", "l1", "-1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::BulkString(Some(Bytes::from("b"))));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(Bytes::from("b")))
+    );
 
     send_cmd(&mut framed, &["SADD", "set1", "x", "y"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(2));
@@ -49,7 +52,10 @@ async fn test_extended_commands_parse_and_execute() {
     assert_eq!(recv(&mut framed).await, Value::Integer(2));
 
     send_cmd(&mut framed, &["HGET", "h1", "f1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::BulkString(Some(Bytes::from("v1"))));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::BulkString(Some(Bytes::from("v1")))
+    );
 
     send_cmd(&mut framed, &["ZADD", "z1", "1", "m1", "2", "m2"]).await;
     assert_eq!(recv(&mut framed).await, Value::Integer(2));
@@ -58,14 +64,19 @@ async fn test_extended_commands_parse_and_execute() {
     assert_eq!(recv(&mut framed).await, Value::Integer(2));
 
     send_cmd(&mut framed, &["TYPE", "z1"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("zset".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("zset".to_string())
+    );
 
     send_cmd(&mut framed, &["FLUSHALL"]).await;
-    assert_eq!(recv(&mut framed).await, Value::SimpleString("OK".to_string()));
+    assert_eq!(
+        recv(&mut framed).await,
+        Value::SimpleString("OK".to_string())
+    );
 
     send_cmd(&mut framed, &["KEYS", "*"]).await;
     assert_eq!(recv(&mut framed).await, Value::Array(Some(vec![])));
 
     server_handle.abort();
 }
-
