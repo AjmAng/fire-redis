@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod http;
 pub mod metrics;
+pub mod observability;
 pub mod persistence;
 pub mod resp;
 pub mod server;

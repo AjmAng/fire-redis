@@ -1,12 +1,10 @@
-use fire_redis::{Server, ServerConfig};
+use fire_redis::{observability, Server, ServerConfig};
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // init tracing subscriber for logging
-    tracing_subscriber::fmt()
-        .with_env_filter("info,fire_redis=debug")
-        .init();
+    // init tracing + optional OTel export
+    let _otel = observability::init();
 
     // resolve configuration from environment variables
     let config = ServerConfig {

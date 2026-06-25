@@ -21,7 +21,11 @@ dashmap = "6.1.0"
 thiserror = "2.0.18"
 tokio = { version = "1.50.0", features = ["full"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
+tracing-opentelemetry = "0.28"
+opentelemetry = { version = "0.27", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.27", features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "trace"] }
 futures = "0.3.28"
 tokio-util = { version = "0.7.18", features = ["codec"] }
 clap = { version = "4.4", features = ["derive"] }

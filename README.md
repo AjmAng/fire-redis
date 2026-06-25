@@ -1,6 +1,6 @@
 # fire-redis
 
-A Redis-like server written in Rust with async I/O (`tokio`), RESP2 protocol support, in-memory data structures, and optional persistence.
+A Redis-like server written in Rust with async I/O (`tokio`), RESP2 protocol support, in-memory data structures, optional persistence, and built-in observability.
 
 ## Highlights
 
@@ -8,6 +8,8 @@ A Redis-like server written in Rust with async I/O (`tokio`), RESP2 protocol sup
 - TCP server and CLI client binaries
 - Core Redis-style commands for strings, lists, sets, hashes, and sorted sets
 - Optional persistence manager (RDB snapshots and AOF logging)
+- Runtime metrics (lock-free counters, latency histograms — via `INFO` and HTTP)
+- OpenTelemetry tracing integration (via `OTEL_EXPORTER_OTLP_ENDPOINT`)
 - Docker support and benchmark tooling
 
 ## Project Layout
@@ -17,9 +19,11 @@ A Redis-like server written in Rust with async I/O (`tokio`), RESP2 protocol sup
 - `src/resp.rs`: RESP codec and tests
 - `src/commands/`: command parsing and execution
 - `src/store/`: in-memory data structure implementations
+- `src/metrics.rs`: lock-free atomic counters and latency histogram
+- `src/observability.rs`: OpenTelemetry tracing integration
 - `src/persistence/`: RDB/AOF persistence logic
 - `perf/`: benchmark scripts and matrix runner
-- `docs/`: architecture, roadmap, demo guide, tradeoffs, observability
+- `docs/`: architecture, roadmap, demo guide, tradeoffs, compatibility, observability
 
 ## Quick Start (Local)
 
@@ -86,13 +90,15 @@ See `perf/README.md` for:
 - Matrix benchmark across different scales (`perf/run_matrix.py`)
 - Head-to-head image comparison (`perf/compare-images.sh`)
 
-## Interview Docs
+## Docs
 
 - `docs/ROADMAP.md`
 - `docs/ARCHITECTURE.md`
 - `docs/DEMO.md`
 - `docs/TRADEOFFS.md`
 - `docs/OBSERVABILITY.md`
+- `docs/COMPATIBILITY.md`
+- `docs/PROGRESS.md`
 
 ## Notes
 

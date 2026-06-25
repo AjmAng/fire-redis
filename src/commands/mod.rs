@@ -105,6 +105,7 @@ impl TryFrom<Vec<Value>> for Command {
             b"STRLEN" => parse_strlen(&args),
             b"TYPE" => parse_type(&args),
             b"KEYS" => parse_keys(&args),
+            b"QUIT" => Ok(Command::Quit),
             b"FLUSHALL" => parse_flushall(&args),
             b"LPUSH" => parse_l_push(&args),
             b"RPUSH" => parse_r_push(&args),
@@ -841,5 +842,380 @@ mod tests {
     fn test_parse_zcount_rejects_wrong_arity() {
         let result = Command::try_from(vec![b("ZCOUNT"), b("z"), b("1")]);
         assert!(matches!(result, Err(Value::Error(_))));
+    }
+
+    // ── Connection commands ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_ping() {
+        let cmd = Command::try_from(vec![b("PING")]).unwrap();
+        assert!(matches!(cmd, Command::Ping));
+    }
+
+    #[test]
+    fn test_parse_echo() {
+        let cmd = Command::try_from(vec![b("ECHO"), b("hello")]).unwrap();
+        match cmd {
+            Command::Echo(msg) => assert_eq!(msg, Bytes::from("hello")),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_echo_rejects_extra_args() {
+        let r = Command::try_from(vec![b("ECHO"), b("a"), b("b")]);
+        assert!(matches!(r, Err(Value::Error(_))));
+    }
+
+    #[test]
+    fn test_parse_quit() {
+        let cmd = Command::try_from(vec![b("QUIT")]).unwrap();
+        assert!(matches!(cmd, Command::Quit));
+    }
+
+    #[test]
+    fn test_parse_info() {
+        let cmd = Command::try_from(vec![b("INFO")]).unwrap();
+        assert!(matches!(cmd, Command::Info));
+    }
+
+    // ── Key commands ───────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_del() {
+        let cmd = Command::try_from(vec![b("DEL"), b("k1"), b("k2")]).unwrap();
+        match cmd {
+            Command::Del(keys) => assert_eq!(keys, vec!["k1", "k2"]),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_del_minimal() {
+        let cmd = Command::try_from(vec![b("DEL"), b("k")]).unwrap();
+        match cmd {
+            Command::Del(keys) => assert_eq!(keys, vec!["k"]),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_exists() {
+        let cmd = Command::try_from(vec![b("EXISTS"), b("k1"), b("k2")]).unwrap();
+        match cmd {
+            Command::Exists(keys) => assert_eq!(keys, vec!["k1", "k2"]),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_expire() {
+        let cmd = Command::try_from(vec![b("EXPIRE"), b("k"), b("10")]).unwrap();
+        match cmd {
+            Command::Expire(key, ms) => {
+                assert_eq!(key, "k");
+                assert_eq!(ms, 10000); // EXPIRE converts seconds to milliseconds
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_expire_rejects_non_integer() {
+        let r = Command::try_from(vec![b("EXPIRE"), b("k"), b("oops")]);
+        assert!(matches!(r, Err(Value::Error(_))));
+    }
+
+    #[test]
+    fn test_parse_incr() {
+        let cmd = Command::try_from(vec![b("INCR"), b("c")]).unwrap();
+        match cmd {
+            Command::Incr(key) => assert_eq!(key, "c"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_decr() {
+        let cmd = Command::try_from(vec![b("DECR"), b("c")]).unwrap();
+        match cmd {
+            Command::Decr(key) => assert_eq!(key, "c"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_append() {
+        let cmd = Command::try_from(vec![b("APPEND"), b("k"), b("val")]).unwrap();
+        match cmd {
+            Command::Append(key, val) => {
+                assert_eq!(key, "k");
+                assert_eq!(val, Bytes::from("val"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_strlen() {
+        let cmd = Command::try_from(vec![b("STRLEN"), b("k")]).unwrap();
+        match cmd {
+            Command::StrLen(key) => assert_eq!(key, "k"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_type_cmd() {
+        let cmd = Command::try_from(vec![b("TYPE"), b("k")]).unwrap();
+        match cmd {
+            Command::Type(key) => assert_eq!(key, "k"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_keys() {
+        let cmd = Command::try_from(vec![b("KEYS"), b("*")]).unwrap();
+        match cmd {
+            Command::Keys(pattern) => assert_eq!(pattern, "*"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_flushall() {
+        let cmd = Command::try_from(vec![b("FLUSHALL")]).unwrap();
+        assert!(matches!(cmd, Command::FlushAll));
+    }
+
+    // ── List commands ──────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_lpush() {
+        let cmd =
+            Command::try_from(vec![b("LPUSH"), b("l"), b("a"), b("b")]).unwrap();
+        match cmd {
+            Command::LPush(key, vals) => {
+                assert_eq!(key, "l");
+                assert_eq!(vals, vec![Bytes::from("a"), Bytes::from("b")]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rpush() {
+        let cmd = Command::try_from(vec![b("RPUSH"), b("l"), b("x")]).unwrap();
+        match cmd {
+            Command::RPush(key, vals) => {
+                assert_eq!(key, "l");
+                assert_eq!(vals, vec![Bytes::from("x")]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_lpop() {
+        let cmd = Command::try_from(vec![b("LPOP"), b("l")]).unwrap();
+        match cmd {
+            Command::LPop(key) => assert_eq!(key, "l"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rpop() {
+        let cmd = Command::try_from(vec![b("RPOP"), b("l")]).unwrap();
+        match cmd {
+            Command::RPop(key) => assert_eq!(key, "l"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_llen() {
+        let cmd = Command::try_from(vec![b("LLEN"), b("l")]).unwrap();
+        match cmd {
+            Command::LLen(key) => assert_eq!(key, "l"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_lindex() {
+        let cmd = Command::try_from(vec![b("LINDEX"), b("l"), b("0")]).unwrap();
+        match cmd {
+            Command::LIndex(key, idx) => {
+                assert_eq!(key, "l");
+                assert_eq!(idx, 0);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // ── Set commands ───────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_srem() {
+        let cmd = Command::try_from(vec![b("SREM"), b("s"), b("a"), b("b")]).unwrap();
+        match cmd {
+            Command::SRem(key, members) => {
+                assert_eq!(key, "s");
+                assert_eq!(members, vec![Bytes::from("a"), Bytes::from("b")]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_smembers() {
+        let cmd = Command::try_from(vec![b("SMEMBERS"), b("s")]).unwrap();
+        match cmd {
+            Command::SMembers(key) => assert_eq!(key, "s"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sismember() {
+        let cmd = Command::try_from(vec![b("SISMEMBER"), b("s"), b("m")]).unwrap();
+        match cmd {
+            Command::SIsMember(key, m) => {
+                assert_eq!(key, "s");
+                assert_eq!(m, Bytes::from("m"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_scard() {
+        let cmd = Command::try_from(vec![b("SCARD"), b("s")]).unwrap();
+        match cmd {
+            Command::SCard(key) => assert_eq!(key, "s"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // ── Hash commands ──────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_hget() {
+        let cmd = Command::try_from(vec![b("HGET"), b("h"), b("f1")]).unwrap();
+        match cmd {
+            Command::HGet(key, field) => {
+                assert_eq!(key, "h");
+                assert_eq!(field, "f1");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hdel() {
+        let cmd = Command::try_from(vec![b("HDEL"), b("h"), b("f1"), b("f2")]).unwrap();
+        match cmd {
+            Command::HDel(key, fields) => {
+                assert_eq!(key, "h");
+                assert_eq!(fields, vec!["f1", "f2"]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hlen() {
+        let cmd = Command::try_from(vec![b("HLEN"), b("h")]).unwrap();
+        match cmd {
+            Command::HLen(key) => assert_eq!(key, "h"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hexists() {
+        let cmd = Command::try_from(vec![b("HEXISTS"), b("h"), b("f1")]).unwrap();
+        match cmd {
+            Command::HExists(key, field) => {
+                assert_eq!(key, "h");
+                assert_eq!(field, "f1");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hkeys() {
+        let cmd = Command::try_from(vec![b("HKEYS"), b("h")]).unwrap();
+        match cmd {
+            Command::HKeys(key) => assert_eq!(key, "h"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hvals() {
+        let cmd = Command::try_from(vec![b("HVALS"), b("h")]).unwrap();
+        match cmd {
+            Command::HVals(key) => assert_eq!(key, "h"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hgetall() {
+        let cmd = Command::try_from(vec![b("HGETALL"), b("h")]).unwrap();
+        match cmd {
+            Command::HGetAll(key) => assert_eq!(key, "h"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // ── Sorted set commands ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_zscore() {
+        let cmd = Command::try_from(vec![b("ZSCORE"), b("z"), b("m1")]).unwrap();
+        match cmd {
+            Command::ZScore(key, member) => {
+                assert_eq!(key, "z");
+                assert_eq!(member, Bytes::from("m1"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_zrem() {
+        let cmd = Command::try_from(vec![b("ZREM"), b("z"), b("m1"), b("m2")]).unwrap();
+        match cmd {
+            Command::ZRem(key, members) => {
+                assert_eq!(key, "z");
+                assert_eq!(members, vec![Bytes::from("m1"), Bytes::from("m2")]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // ── Arity / error helpers ──────────────────────────────────────
+
+    #[test]
+    fn test_parse_unknown_command() {
+        let r = Command::try_from(vec![b("BOGUS")]);
+        assert!(matches!(r, Err(Value::Error(e)) if e.contains("unknown command")));
+    }
+
+    #[test]
+    fn test_parse_empty_args() {
+        let r = Command::try_from(vec![]);
+        assert!(matches!(r, Err(Value::Error(e)) if e.contains("empty command")));
+    }
+
+    #[test]
+    fn test_parse_invalid_cmd_type() {
+        let r = Command::try_from(vec![Value::SimpleString("PING".into())]);
+        assert!(matches!(r, Err(Value::Error(e)) if e.contains("invalid command")));
     }
 }

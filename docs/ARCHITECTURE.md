@@ -11,9 +11,15 @@
 3. `src/store/`
    - In-memory data structures (string/hash/list/set/zset)
    - TTL checks and periodic expired-key eviction
-4. `src/persistence/` (optional)
+4. `src/metrics.rs` / `src/server.rs`
+   - Lock-free atomic counters and latency histogram
+   - Command-level counters, connection tracking, keyspace hit/miss
+5. `src/persistence/` (optional)
    - AOF write logging and RDB snapshot support
    - Startup load path for recovery
+6. `src/observability.rs`
+   - OpenTelemetry tracing bridge (optional, via `OTEL_EXPORTER_OTLP_ENDPOINT`)
+   - Fluentd on drop for span flushing
 
 ## Runtime Model
 

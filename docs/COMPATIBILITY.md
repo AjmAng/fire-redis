@@ -1,6 +1,6 @@
 # 命令兼容性矩阵（COMPATIBILITY.md）
 
-> 最后更新：2026-06-08  
+> 最后更新：2026-06-25  
 > 对应代码分支：`master`
 
 本文档按命令分组列出 Redis 标准命令在 fire-redis 中的实现状态。
@@ -25,7 +25,7 @@
 | `PING` | ✅ supported | |
 | `ECHO` | ✅ supported | |
 | `QUIT` | ✅ supported | |
-| `INFO` | 🟡 partial | 仅返回 `# Server` 段（版本、模式），不含 memory / stats / keyspace 等段 |
+| `INFO` | ✅ supported | 返回 Server / Stats / Latency / Commandstats / Keyspace / Replication 共 6 个段 |
 | `RESET` | 🔲 todo | |
 | `AUTH` | ❌ n/a | 无 ACL / 鉴权机制 |
 | `SELECT` | ❌ n/a | 不支持多 database |
@@ -256,7 +256,7 @@
 | 状态 | 数量 |
 |------|------|
 | ✅ `supported` | **46** |
-| 🟡 `partial`   | **5**（`INFO`、`KEYS`、`SET`、`ZRANGE`、`HMSET`）|
+| 🟡 `partial`   | **4**（`KEYS`、`SET`、`ZRANGE`、`HMSET`）|
 | 🔲 `todo`      | ~55（通用键 + 各数据类型扩展命令 + Server 命令）|
 | ❌ `n/a`       | 整类不实现（见上表）|
 
@@ -271,10 +271,6 @@
 ### `SET` — 缺少部分选项
 支持：`EX`、`PX`、`NX`、`XX`  
 不支持：`KEEPTTL`（保留现有 TTL）、`EXAT`/`PXAT`（绝对 Unix 时间戳到期）、`GET`（返回旧值）
-
-### `INFO` — 仅返回 Server 段
-当前输出：`redis_version`、`redis_mode`、`os`  
-不返回：`memory`、`stats`、`keyspace`、`clients`、`replication`、`persistence` 等段
 
 ### `ZRANGE` — 仅支持 index 范围
 仅支持 `ZRANGE key start stop`（按排名区间）。  
