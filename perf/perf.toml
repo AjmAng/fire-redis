@@ -1,0 +1,10 @@
+[docker]
+fire_image = "fire-redis"
+redis_image = "redis"
+cpus = "1.0"
+memory = "512m"
+pids_limit = 256
+wait_secs = 2.0
+
+[output]
+dir = "results"

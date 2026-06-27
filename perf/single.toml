@@ -1,0 +1,18 @@
+# Single mode — quick smoke-test comparison
+warmup = 500
+key_prefix = "perf-single"
+cleanup = true
+
+cases = [
+  { op = "set",    requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "get",    requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "mixed",  requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "ping",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "incr",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "hset",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "hget",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "lpush",  requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "lpop",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "sadd",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+  { op = "zadd",   requests = 10000,  workers = 10, keyspace = 1000,  value_size = 128 },
+]

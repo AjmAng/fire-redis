@@ -1,0 +1,24 @@
+# Full mode — comprehensive benchmark matrix
+warmup = 1000
+key_prefix = "perf-full"
+cleanup = true
+
+base_requests = 100000
+base_workers = 50
+base_keyspace = 10000
+base_value_size = 128
+base_pipeline_size = 10
+seed = 42
+repeat = 3
+
+ops = [
+  "set", "get", "mixed", "pipeline", "incr", "decr", "mget", "mset",
+  "append", "strlen", "del", "exists",
+  "hset", "hget", "hdel", "hlen", "hexists", "hkeys", "hvals", "hgetall",
+  "lpush", "lpop", "rpush", "rpop", "llen", "lindex", "lrange",
+  "sadd", "sismember", "srem", "smembers", "scard", "spop",
+  "zadd", "zscore", "zrem", "zcard", "zcount", "zrange",
+  "ping", "all-mixed",
+]
+
+scales = [1, 2, 4]
