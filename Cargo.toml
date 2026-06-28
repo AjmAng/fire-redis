@@ -14,6 +14,10 @@ path = "src/bin/server.rs"
 name = "redis-cli"
 path = "src/bin/cli.rs"
 
+[[bin]]
+name = "redis-benchmark"
+path = "src/bin/redis_benchmark.rs"
+
 
 [dependencies]
 bytes = "1.11.1"
@@ -31,8 +35,17 @@ tokio-util = { version = "0.7.18", features = ["codec"] }
 clap = { version = "4.4", features = ["derive"] }
 ordered-float = "5.1.0"
 serde = { version = "1.0", features = ["derive"] }
+redis = { version = "1.0.4", features = ["tokio-comp"] }
 
 [dev-dependencies]
-redis = { version = "1.0.4", features = ["tokio-comp"] }
+criterion = "0.5"
+
+[[bench]]
+name = "store_bench"
+harness = false
+
+[[bench]]
+name = "redis_command_bench"
+harness = false
 
 

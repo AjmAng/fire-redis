@@ -84,6 +84,45 @@ docker run --rm -p 6379:6379 -e REDIS_BIND=0.0.0.0 -e REDIS_PORT=6379 fire-redis
 
 ## Benchmarking
 
+Run native Rust micro-benchmarks (Criterion):
+
+```bash
+cargo bench --bench store_bench
+```
+
+This benchmark currently covers set operations (`SADD`, `SISMEMBER`, `SPOP`) on different scales.
+
+Run Redis-style command benchmarks (against a live Redis-compatible server):
+
+```bash
+cargo bench --bench redis_command_bench
+```
+
+Set target server URL via `REDIS_BENCH_URL` (default: `redis://127.0.0.1:6379/0`).
+
+You can compare `fire-redis` vs official Redis using Criterion baselines.
+
+```powershell
+$env:REDIS_BENCH_URL = "redis://127.0.0.1:6379/0"
+cargo bench --bench redis_command_bench -- --save-baseline redis-official
+
+$env:REDIS_BENCH_URL = "redis://127.0.0.1:6380/0"
+cargo bench --bench redis_command_bench -- --baseline redis-official
+```
+
+You can also build and run a standalone benchmark binary (similar to `redis-benchmark`):
+
+```bash
+cargo build --release --bin redis-benchmark
+cargo run --release --bin redis-benchmark -- -u redis://127.0.0.1:6379/0 -n 100000 -c 50
+```
+
+Select test set via `-t` (comma-separated), for example:
+
+```bash
+cargo run --release --bin redis-benchmark -- -t ping,set,get,incr,lpush,lpop,sadd,hset,spop,zadd,mset,lrange_100,lrange_300,lrange_500,lrange_600
+```
+
 See `perf/README.md` for:
 
 - Single-run benchmark (`perf/main.py`)
